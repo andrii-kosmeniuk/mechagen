@@ -52,6 +52,7 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
   const [currentPartId, setCurrentPartId] = useState<string | null>(null);
   const [historyParts, setHistoryParts] = useState<HistoryPart[]>([]);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [genError, setGenError] = useState<string | null>(null);
   const currentProjectId = 'default-project';
 
   const costLabel = (() => {
@@ -75,8 +76,16 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
       realtimeIntervalRef.current = null;
     }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${window.location.host}`);
+    // Backend runs on port 3001; Vite dev server is a different port
+    const backendHost = window.location.hostname + ':3001';
+    let socket: WebSocket;
+    try {
+      socket = new WebSocket(`${protocol}//${backendHost}`);
+    } catch {
+      return; // WebSocket not supported or backend has no WS — skip silently
+    }
     socketRef.current = socket;
+    socket.onerror = () => { /* backend has no WS server — ignore */ };
     socket.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data) as {
@@ -150,32 +159,47 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
   }, [loadHistory]);
 
   const onGenerate = async () => {
+    if (!prompt.trim()) {
+      showToast('Please enter a prompt first', 'error');
+      return;
+    }
     setGenerating(true);
+    setGenError(null);
+    setGeomData(null);
     try {
-      const data = await api.post<{
-        id: string;
-        geomData: GeomData;
-      }>('/api/ai/generate', {
-        prompt,
-        mode: multiAgent ? 'multi-agent' : 'standard',
+      console.log('[Generate] Sending prompt:', prompt);
+      // Direct fetch — bypasses api helper to avoid silent failures
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
       });
-      if (data?.geomData) {
-        setGeomData(data.geomData);
-        setCurrentPartId(data.id);
-        const s = socketRef.current;
-        if (s?.readyState === WebSocket.OPEN) {
-          s.send(
-            JSON.stringify({
-              type: 'model:updated',
-              userId: user.id,
-              userName: user.name,
-              geomData: data.geomData,
-            })
-          );
-        }
+      console.log('[Generate] Response status:', res.status);
+      const text = await res.text();
+      console.log('[Generate] Raw response:', text.slice(0, 500));
+
+      let data: GeomData;
+      try { data = JSON.parse(text); }
+      catch { throw new Error('Backend returned invalid JSON: ' + text.slice(0, 200)); }
+
+      if (!res.ok) {
+        const errMsg = (data as unknown as { error?: string }).error || `Server error ${res.status}`;
+        throw new Error(errMsg);
       }
-    } catch {
-      showToast('Network error. Check your connection.', 'error');
+
+      if (!data.code || typeof data.code !== 'string' || data.code.trim().length < 30) {
+        throw new Error('AI returned empty JSCAD code. Try a different prompt.');
+      }
+
+      console.log('[Generate] OK — code length:', data.code.length);
+      setGeomData(data);
+      setCurrentPartId(crypto.randomUUID());
+      showToast(`✓ Generated!`);
+    } catch (e) {
+      const msg = (e as Error).message || 'Unknown error';
+      console.error('[Generate] FAILED:', msg);
+      setGenError(msg);
+      showToast(`Generation failed: ${msg}`, 'error');
     } finally {
       setGenerating(false);
     }
@@ -231,8 +255,9 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
     }
     const recognition = new SR();
     recognition.onstart = () => showToast('Listening...');
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      const transcript = event.results[0][0].transcript;
+    recognition.onresult = (event: Event) => {
+      const sr = event as unknown as { results: { [k: number]: { [k: number]: { transcript: string } } } };
+      const transcript = sr.results[0][0].transcript;
       setPrompt(transcript);
     };
     recognition.start();
@@ -299,6 +324,29 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
               <div className="status-badge">Draft</div>
               <div className="mt-2 flex-between gap-2" />
             </div>
+            {genError && (
+              <div style={{
+                position: 'absolute', top: '50%', left: '50%',
+                transform: 'translate(-50%,-50%)',
+                background: 'rgba(0,0,0,0.85)', border: '1px solid var(--error)',
+                borderRadius: 8, padding: '1rem 1.5rem', maxWidth: '80%',
+                color: 'var(--error)', fontSize: '0.85rem', textAlign: 'center',
+                pointerEvents: 'none',
+              }}>
+                ⚠️ {genError}
+              </div>
+            )}
+            {generating && (
+              <div style={{
+                position: 'absolute', top: '50%', left: '50%',
+                transform: 'translate(-50%,-50%)',
+                background: 'rgba(0,0,0,0.7)', borderRadius: 8,
+                padding: '1rem 1.5rem', color: '#fff', fontSize: '0.85rem',
+                pointerEvents: 'none',
+              }}>
+                ⚙️ Generating 3D model…
+              </div>
+            )}
             <div className="viewport-bottom-actions">
               <button type="button" className="chip">
                 Submit for Review

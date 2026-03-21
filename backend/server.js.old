@@ -7,7 +7,8 @@ const { randomUUID } = require("crypto");
 
 const PORT    = process.env.PORT || 3001;
 const API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-const MODEL   = "mistralai/mistral-small-4-119b-2603";
+// Switching to Llama 3.1 70B for < 5s generation. Nemotron-120b is a reasoning model that takes 30s+
+const MODEL   = "meta/llama-3.1-70b-instruct";
 
 // Frontend HTML path — works both locally and on Railway
 const FRONTEND_HTML = path.join(__dirname, "..", "frontend", "index.html");
@@ -781,7 +782,7 @@ QUALITY RULES:
     const result = await apiFetch({
       model: MODEL,
       temperature: 0.6,
-      max_tokens: 2048,
+      max_tokens: 4096,
       messages: [
         { role: "system", content: SYSTEM },
         { role: "user",   content: `Generate a detailed 3D mechanical part for: ${prompt.trim()}` }
@@ -795,11 +796,19 @@ QUALITY RULES:
     }
 
     const data = JSON.parse(result.body);
-    const raw  = data.choices?.[0]?.message?.content || "";
-    console.log("[RAW]", raw.substring(0, 300));
+    const msg  = data.choices?.[0]?.message || {};
+
+    // Reasoning models (nemotron-super etc.) put output in reasoning_content, not content
+    const raw = [msg.content || "", msg.reasoning_content || ""].join("\n").trim();
+    console.log("[RAW first 500]", raw.substring(0, 500));
+
+    if (!raw) {
+      console.error("[ERROR] Full API body:", JSON.stringify(data).substring(0, 1000));
+      throw new Error("Model returned empty content — check model name and API key.");
+    }
 
     const clean = extractJSON(raw);
-    if (!clean) throw new Error("Empty model response");
+    if (!clean) throw new Error("No JSON found in model response. Raw snippet: " + raw.substring(0, 150));
 
     const geometry = JSON.parse(clean);
     if (!Array.isArray(geometry.parts) || geometry.parts.length === 0) {

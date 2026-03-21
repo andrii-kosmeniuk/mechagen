@@ -1,19 +1,13 @@
 {
   "name": "mechagen-backend",
   "version": "1.0.0",
-  "main": "api/generate.js",
+  "description": "MechaGen AI geometry generation backend",
+  "engines": { "node": ">=18.x" },
   "scripts": {
-    "dev": "node server.js",
-    "start": "node server.js",
-    "vercel-dev": "vercel dev --listen 3001"
-  },
-  "dependencies": {
-    "dotenv": "^17.3.1"
+    "start": "vercel dev --listen 3001",
+    "lint":  "node --check lib/ai.js lib/geometry.js lib/sanitize.js api/generate.js"
   },
   "devDependencies": {
-    "vercel": "^37.0.0"
-  },
-  "engines": {
-    "node": ">=18.x"
+    "vercel": "latest"
   }
 }

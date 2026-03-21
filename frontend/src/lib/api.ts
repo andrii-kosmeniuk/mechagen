@@ -8,11 +8,14 @@ export function createApi(supabase: SupabaseClient | null) {
     path: string,
     body?: unknown
   ): Promise<T | null | undefined> {
-    if (!supabase) return undefined;
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const idToken = session?.access_token;
+    // Get optional auth token — don't block if supabase is null or no session
+    let idToken: string | undefined;
+    if (supabase) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        idToken = session?.access_token;
+      } catch { /* no session, continue without token */ }
+    }
 
     try {
       const res = await fetch(API_BASE + path, {
@@ -25,6 +28,7 @@ export function createApi(supabase: SupabaseClient | null) {
       });
 
       if (res.status === 401) return null;
+      if (res.status === 404) return null;
       if (res.status === 429) throw new Error('AI quota exceeded');
 
       const contentType = res.headers.get('content-type') || '';
@@ -32,8 +36,8 @@ export function createApi(supabase: SupabaseClient | null) {
 
       if (!res.ok) {
         if (!isJson) return null;
-        const errData = (await res.json()) as { message?: string };
-        throw new Error(errData?.message || `Request failed (${res.status})`);
+        const errData = (await res.json()) as { message?: string; error?: string };
+        throw new Error(errData?.message || errData?.error || `Request failed (${res.status})`);
       }
 
       if (!isJson) return null;

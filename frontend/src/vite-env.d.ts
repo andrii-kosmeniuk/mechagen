@@ -1,4 +1,6 @@
 /// <reference types="vite/client" />
+declare module 'qrcode';
+
 
 interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL: string;
