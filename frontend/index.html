@@ -12,6 +12,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@jscad/modeling@2/dist/jscad-modeling.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/STLExporter.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/OBJExporter.js"></script>
     <style>
@@ -481,16 +482,16 @@
                                 <span class="btn-text">✦ Generate</span>
                                 <span class="spinner"></span>
                             </button>
-                            <button class="chip" id="btn-scad-toggle" title="Toggle OpenSCAD mode" style="white-space:nowrap;">
-                                ⬡ SCAD
+                            <button class="chip" id="btn-scad-toggle" title="Toggle JSCAD mode" style="white-space:nowrap;">
+                                ⬡ JSCAD
                             </button>
                             <button class="chip" id="btn-variants">Variants</button>
                         </div>
 
-                        <!-- SCAD Code Viewer (hidden by default) -->
+                        <!-- JSCAD Code Viewer (hidden by default) -->
                         <div id="scad-viewer" style="display:none;margin-top:1rem;">
                             <div class="flex-between" style="margin-bottom:0.5rem;">
-                                <span style="font-size:0.8rem;font-weight:600;color:var(--accent-blue)">⬡ OpenSCAD Code</span>
+                                <span style="font-size:0.8rem;font-weight:600;color:var(--accent-blue)">⬡ JSCAD Code</span>
                                 <div class="flex-between gap-2">
                                     <button class="chip" id="btn-rerender-scad" style="font-size:0.7rem;">↻ Re-render</button>
                                     <button class="chip" id="btn-copy-scad" style="font-size:0.7rem;">⎘ Copy</button>
@@ -1166,20 +1167,20 @@
         let scadMode = false;
         let currentScadCode = null;
 
-        // Toggle SCAD mode
+        // Toggle JSCAD mode
         document.getElementById('btn-scad-toggle').addEventListener('click', () => {
             scadMode = !scadMode;
             const btn = document.getElementById('btn-scad-toggle');
             btn.style.background  = scadMode ? 'var(--accent-blue)' : '';
             btn.style.color       = scadMode ? '#000' : '';
-            btn.title             = scadMode ? 'OpenSCAD mode ON — AI generates .scad → STL' : 'Toggle OpenSCAD mode';
+            btn.title             = scadMode ? 'JSCAD mode ON — AI generates JavaScript → Browser renders' : 'Toggle JSCAD mode';
             document.getElementById('scad-viewer').style.display = scadMode && currentScadCode ? 'block' : 'none';
-            showToast(scadMode ? '⬡ OpenSCAD mode ON' : '⬡ OpenSCAD mode OFF');
+            showToast(scadMode ? '⬡ JSCAD mode ON' : '⬡ JSCAD mode OFF');
         });
 
         document.getElementById('btn-copy-scad').addEventListener('click', () => {
             const code = document.getElementById('scad-code-area').value;
-            navigator.clipboard.writeText(code).then(() => showToast('SCAD code copied!'));
+            navigator.clipboard.writeText(code).then(() => showToast('JSCAD code copied!'));
         });
 
         document.getElementById('btn-rerender-scad').addEventListener('click', async () => {
@@ -1188,53 +1189,79 @@
             const btn = document.getElementById('btn-generate');
             btn.classList.add('loading');
             try {
-                const res = await fetch(BACKEND_URL + '/api/ai/render-scad', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ scad_code: code })
-                });
-                const data = await res.json();
-                if (data.success) { renderFromSTL(data.stl_base64); showToast('✓ Re-rendered'); }
-                else showToast('Render error: ' + data.error, 'error');
-            } catch (e) { showToast('Backend error', 'error'); }
-            finally { btn.classList.remove('loading'); }
+                const geometry = runJSCAD(code);
+                const threeGeometry = jscadToThree(geometry);
+                renderGeometry(threeGeometry);
+                showToast('✓ Re-rendered');
+            } catch (e) {
+                showToast('JSCAD Render error: ' + e.message, 'error');
+            } finally {
+                btn.classList.remove('loading');
+            }
         });
 
-        // Binary STL parser (no external loader needed)
-        function parseBinarySTL(buffer) {
-            const view   = new DataView(buffer);
-            const nTris  = view.getUint32(80, true);
-            const positions = new Float32Array(nTris * 9);
-            const normals   = new Float32Array(nTris * 9);
-            let offset = 84, pi = 0, ni = 0;
-            for (let i = 0; i < nTris; i++) {
-                const nx = view.getFloat32(offset,      true);
-                const ny = view.getFloat32(offset +  4, true);
-                const nz = view.getFloat32(offset +  8, true);
-                offset += 12;
-                for (let v = 0; v < 3; v++) {
-                    positions[pi++] = view.getFloat32(offset,     true);
-                    positions[pi++] = view.getFloat32(offset + 4, true);
-                    positions[pi++] = view.getFloat32(offset + 8, true);
-                    normals[ni++] = nx; normals[ni++] = ny; normals[ni++] = nz;
-                    offset += 12;
-                }
-                offset += 2; // attribute byte count
+        function runJSCAD(code) {
+            try {
+                const fn = new Function('jscadModeling', code + '\nreturn main();');
+                return fn(jscadModeling);
+            } catch (err) {
+                throw new Error('JSCAD Error: ' + err.message);
             }
+        }
+
+        function calculateNormal(pts) {
+            const v1 = [pts[1][0]-pts[0][0], pts[1][1]-pts[0][1], pts[1][2]-pts[0][2]];
+            const v2 = [pts[2][0]-pts[0][0], pts[2][1]-pts[0][1], pts[2][2]-pts[0][2]];
+            const n  = [
+                v1[1]*v2[2] - v1[2]*v2[1],
+                v1[2]*v2[0] - v1[0]*v2[2],
+                v1[0]*v2[1] - v1[1]*v2[0]
+            ];
+            const len = Math.sqrt(n[0]*n[0] + n[1]*n[1] + n[2]*n[2]) || 1;
+            return [n[0]/len, n[1]/len, n[2]/len];
+        }
+
+        function jscadToThree(jscadGeom) {
+            const { geometries } = jscadModeling;
+
+            // Handle arrays of geometries (e.g. from unions that didn't merge fully)
+            let geomToConvert = jscadGeom;
+            if (Array.isArray(jscadGeom)) {
+                // simple fallback if multiple geometries are returned
+                geomToConvert = jscadGeom[0];
+            }
+
+            const polygons = geometries.geom3.toPolygons(geomToConvert);
+            const vertices = [];
+            const normals  = [];
+
+            polygons.forEach(polygon => {
+                const pts = polygon.vertices;
+                if (pts.length < 3) return;
+                const normal = calculateNormal(pts);
+
+                for (let i = 1; i < pts.length - 1; i++) {
+                    vertices.push(pts[0][0], pts[0][1], pts[0][2]);
+                    normals.push(normal[0], normal[1], normal[2]);
+                    vertices.push(pts[i][0], pts[i][1], pts[i][2]);
+                    normals.push(normal[0], normal[1], normal[2]);
+                    vertices.push(pts[i+1][0], pts[i+1][1], pts[i+1][2]);
+                    normals.push(normal[0], normal[1], normal[2]);
+                }
+            });
+
             const geo = new THREE.BufferGeometry();
-            geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geo.setAttribute('normal',   new THREE.BufferAttribute(normals,   3));
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geo.setAttribute('normal',   new THREE.Float32BufferAttribute(normals, 3));
             return geo;
         }
 
-        function renderFromSTL(stlBase64) {
-            // Decode base64 → ArrayBuffer
-            const bin = atob(stlBase64);
-            const buf = new Uint8Array(bin.length);
-            for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-
-            let geo;
-            try { geo = parseBinarySTL(buf.buffer); }
-            catch (e) { showToast('STL parse error: ' + e.message, 'error'); return; }
+        function renderGeometry(geo) {
+            if (mesh) {
+                scene.remove(mesh);
+                if (mesh.geometry) mesh.geometry.dispose();
+                if (mesh.material) mesh.material.dispose();
+            }
 
             // Center + scale to fit -2 to 2 units
             geo.computeBoundingBox();
@@ -1257,7 +1284,8 @@
 
             const mat = new THREE.MeshStandardMaterial({
                 color: new THREE.Color('#8a9aaa'),
-                metalness: 0.90, roughness: 0.18
+                metalness: 0.90, roughness: 0.18,
+                envMapIntensity: 2.0
             });
             mesh = new THREE.Mesh(geo, mat);
             mesh.castShadow = true;
@@ -1338,39 +1366,56 @@
             document.getElementById('part-status').style.background = 'var(--warning)';
 
             try {
-                // ─── OpenSCAD mode ────────────────────────────
-                if (scadMode) {
-                    const res = await fetch(BACKEND_URL + '/api/ai/generate-scad', {
+            // ─── JSCAD mode ────────────────────────────
+            if (scadMode) {
+                try {
+                    const res = await fetch(BACKEND_URL + '/api/ai/generate-jscad', {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ prompt })
                     });
                     const data = await res.json();
 
-                    if (res.status === 501) {
-                        // OpenSCAD not installed — tell user
-                        showToast('OpenSCAD not installed on server. Run: brew install --cask openscad', 'error');
-                        document.getElementById('part-status').innerText = 'OpenSCAD missing';
-                        document.getElementById('part-status').style.background = 'var(--error)';
-                        return;
-                    }
                     if (!data.success) {
-                        showToast('SCAD error: ' + (data.error || 'Unknown error'), 'error');
+                        showToast('JSCAD API error: ' + (data.error || 'Unknown error'), 'error');
                         document.getElementById('part-status').innerText = 'Error';
                         document.getElementById('part-status').style.background = 'var(--error)';
                         return;
                     }
 
-                    currentScadCode = data.scad_code;
+                    currentScadCode = data.jscad_code;
                     document.getElementById('scad-code-area').value = currentScadCode;
                     document.getElementById('scad-viewer').style.display = 'block';
 
-                    renderFromSTL(data.stl_base64);
-                    addHistory('[SCAD] ' + prompt, null);
-                    showToast(`✓ OpenSCAD model — ${data.size_kb}KB STL`);
-                    document.getElementById('part-status').innerText = 'Draft';
-                    document.getElementById('part-status').style.background = '';
+                    document.getElementById('part-status').innerText = 'Running JSCAD...';
+                    
+                    // Allow UI to update before blocking execution
+                    setTimeout(() => {
+                        try {
+                            const geometry = runJSCAD(currentScadCode);
+                            const threeGeometry = jscadToThree(geometry);
+                            renderGeometry(threeGeometry);
+
+                            addHistory('[JSCAD] ' + prompt, null);
+                            showToast(`✓ JSCAD model generated`);
+                            document.getElementById('part-status').innerText = 'Draft';
+                            document.getElementById('part-status').style.background = '';
+                        } catch (renderErr) {
+                            showToast('JSCAD Render error: ' + renderErr.message, 'error');
+                            document.getElementById('part-status').innerText = 'Render Error';
+                            document.getElementById('part-status').style.background = 'var(--error)';
+                        } finally {
+                            btn.classList.remove('loading');
+                        }
+                    }, 50);
+                    return;
+                } catch (err) {
+                    showToast('Network error generating JSCAD', 'error');
+                    document.getElementById('part-status').innerText = 'Error';
+                    document.getElementById('part-status').style.background = 'var(--error)';
+                    btn.classList.remove('loading');
                     return;
                 }
+            }
 
                 // ─── Normal JSON primitive mode ───────────────
                 const res = await fetch(BACKEND_URL + '/api/generate', {

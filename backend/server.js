@@ -545,6 +545,180 @@ Always end file with the top-level shape call.`;
     }
   }
 
+  // ── JSCAD pipeline: generate .js ────────────────
+  if (req.method === "POST" && req.url === "/api/ai/generate-jscad") {
+    const b = await readBody(req).catch(() => "{}");
+    const body = JSON.parse(b);
+    const apiKey = process.env.NVIDIA_API_KEY;
+
+    if (!apiKey) return send(res, 500, { error: "NVIDIA_API_KEY not configured" });
+    const prompt = body.prompt || "";
+    if (!prompt.trim()) return send(res, 400, { error: "prompt is required" });
+
+    const JSCAD_SYSTEM_PROMPT = `You are an expert JSCAD programmer for mechanical engineering parts.
+JSCAD uses JavaScript with @jscad/modeling library.
+
+STRICT RULES:
+1. Output ONLY valid JavaScript — no markdown, no explanation
+2. Always destructure needed functions from jscadModeling
+3. Always export a main() function that returns the geometry
+4. All dimensions in millimeters
+5. Center model at origin
+6. Use CSG operations for holes and complex shapes
+
+AVAILABLE JSCAD FUNCTIONS:
+const {
+  // Primitives
+  primitives: { cylinder, cube, sphere, torus, cylinderElliptic },
+
+  // Boolean operations
+  booleans: { union, subtract, intersect },
+
+  // Transforms
+  transforms: { translate, rotate, scale, mirror, center },
+
+  // Math
+  maths: { vec3 },
+
+  // Utils
+  utils: { degToRad }
+} = jscadModeling;
+
+EXAMPLE — Hex Bolt M8:
+\`\`\`javascript
+const {
+  primitives: { cylinder, cube },
+  booleans: { union, subtract },
+  transforms: { translate, rotate },
+  utils: { degToRad }
+} = jscadModeling;
+
+function main() {
+  // Parameters
+  const boltD = 8;
+  const boltL = 40;
+  const headH = 6.4;
+  const headW = 13;
+
+  // Hex head ($fn=6 equivalent)
+  const hexHead = cylinder({
+    height: headH,
+    radius: headW / 2,
+    segments: 6
+  });
+
+  // Washer
+  const washer = subtract(
+    cylinder({ height: 2, radius: headW * 0.6 / 2, segments: 64 }),
+    cylinder({ height: 2.1, radius: boltD / 2, segments: 64 })
+  );
+
+  // Shaft
+  const shaft = cylinder({
+    height: boltL,
+    radius: boltD / 2,
+    segments: 64
+  });
+
+  // Threads (loop)
+  const threads = [];
+  for (let i = 0; i < boltL / 1.25; i++) {
+    threads.push(
+      translate([0, 0, i * 1.25 - boltL/2],
+        cylinder({ height: 0.6, radius: boltD/2 + 0.5, segments: 32 })
+      )
+    );
+  }
+
+  // Assemble
+  return union(
+    translate([0, 0, boltL/2 + headH/2], hexHead),
+    translate([0, 0, boltL/2 - 1],       washer),
+    shaft,
+    ...threads
+  );
+}
+\`\`\`
+
+EXAMPLE — Spur Gear:
+\`\`\`javascript
+const {
+  primitives: { cylinder },
+  booleans: { union, subtract },
+  transforms: { translate, rotate },
+  utils: { degToRad }
+} = jscadModeling;
+
+function main() {
+  const teeth = 18;
+  const module = 2;
+  const faceWidth = 20;
+  const boreD = 10;
+
+  const pitchR = (teeth * module) / 2;
+  const outerR = pitchR + module;
+  const rootR  = pitchR - 1.25 * module;
+
+  // Gear body
+  let gear = cylinder({ height: faceWidth, radius: rootR, segments: 64 });
+
+  // Add teeth
+  for (let i = 0; i < teeth; i++) {
+    const angle = degToRad((360 / teeth) * i);
+    const tooth = translate(
+      [Math.cos(angle) * pitchR, Math.sin(angle) * pitchR, 0],
+      cylinder({ height: faceWidth + 0.1, radius: module * 0.8, segments: 8 })
+    );
+    gear = union(gear, tooth);
+  }
+
+  // Bore hole
+  gear = subtract(gear,
+    cylinder({ height: faceWidth + 0.2, radius: boreD/2, segments: 64 })
+  );
+
+  // Chamfers top/bottom
+  gear = subtract(gear,
+    translate([0, 0, faceWidth/2 - 0.5],
+      cylinder({ height: 2, radius1: boreD/2 + 2, radius2: boreD/2, segments: 64 })
+    )
+  );
+
+  return gear;
+}
+\`\`\`
+
+QUALITY RULES:
+- segments: 64 for visible cylinders, 32 for small, 6 for hex, 8 for teeth
+- Always subtract bore holes with subtract()
+- Add chamfers with cylinder() radius1 !== radius2
+- Threads: for() loop with small cylinders
+- Knurling: for() loop with small cubes around perimeter
+- Always return single geometry from main()
+- Real world dimensions (mm) always`;
+
+    try {
+      const result = await apiFetch({
+        model: MODEL, temperature: 0.3, max_tokens: 2048,
+        messages: [
+          { role: "system", content: JSCAD_SYSTEM_PROMPT },
+          { role: "user",   content: `Generate JSCAD code for: ${prompt.trim()}` }
+        ]
+      }, apiKey);
+
+      const data = JSON.parse(result.body);
+      let jscadCode = (data.choices?.[0]?.message?.content || "").trim();
+      jscadCode = jscadCode.replace(/^```(?:javascript|js)?\s*/i, "").replace(/```\s*$/i, "").trim();
+      if (!jscadCode) throw new Error("Model returned empty JSCAD code");
+
+      console.log(`[JSCAD] Code OK`);
+      return send(res, 200, { success: true, jscad_code: jscadCode });
+
+    } catch (err) {
+      return send(res, 500, { error: err.message || "JSCAD generation failed" });
+    }
+  }
+
   // /api/ai/generate → forward to /api/generate
   if (req.method === "POST" && req.url === "/api/ai/generate") {
     req.url = "/api/generate";
