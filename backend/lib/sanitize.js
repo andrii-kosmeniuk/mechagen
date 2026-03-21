@@ -1,7 +1,9 @@
 'use strict';
 
 const MIN_PROMPT = 3;
-const MAX_PROMPT = 500;
+const MAX_PROMPT = 2000;
+const MAX_CONTEXT = 6000;
+const MAX_PROJECT_NAME = 200;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB base64 limit
 
 const ALLOWED_IMAGE_PREFIXES = [
@@ -20,7 +22,7 @@ function sanitizeRequest(body) {
     return { error: 'Request body must be JSON', status: 400 };
   }
 
-  const { prompt, image } = body;
+  const { prompt, image, highDetail, context, projectName } = body;
   const hasPrompt = typeof prompt === 'string' && prompt.trim().length > 0;
   const hasImage  = typeof image === 'string'  && image.trim().length > 0;
 
@@ -36,6 +38,38 @@ function sanitizeRequest(body) {
     if (trimmed.length > MAX_PROMPT) {
       return { error: `Prompt must be at most ${MAX_PROMPT} characters`, status: 400 };
     }
+  }
+
+  let highDetailFlag = false;
+  if (highDetail !== undefined && highDetail !== null) {
+    if (typeof highDetail !== 'boolean') {
+      return { error: 'highDetail must be a boolean', status: 400 };
+    }
+    highDetailFlag = highDetail;
+  }
+
+  let contextStr = null;
+  if (context !== undefined && context !== null) {
+    if (typeof context !== 'string') {
+      return { error: 'context must be a string', status: 400 };
+    }
+    const t = context.trim();
+    if (t.length > MAX_CONTEXT) {
+      return { error: `context must be at most ${MAX_CONTEXT} characters`, status: 400 };
+    }
+    if (t.length > 0) contextStr = t;
+  }
+
+  let projectNameStr = null;
+  if (projectName !== undefined && projectName !== null) {
+    if (typeof projectName !== 'string') {
+      return { error: 'projectName must be a string', status: 400 };
+    }
+    const t = projectName.trim();
+    if (t.length > MAX_PROJECT_NAME) {
+      return { error: `projectName must be at most ${MAX_PROJECT_NAME} characters`, status: 400 };
+    }
+    if (t.length > 0) projectNameStr = t;
   }
 
   if (hasImage) {
@@ -57,6 +91,9 @@ function sanitizeRequest(body) {
     value: {
       prompt: hasPrompt ? prompt.trim() : null,
       image:  hasImage  ? image.trim()  : null,
+      highDetail: highDetailFlag,
+      context: contextStr,
+      projectName: projectNameStr,
     }
   };
 }

@@ -10,7 +10,9 @@ export interface GeomPart {
 }
 
 export interface GeomData {
-  code: string;   // Raw JSCAD JavaScript returned by the AI
+  code: string;   // Raw JSCAD or CadQuery source (for display / JSCAD path)
+  /** Base64 STL from CadQuery when the backend used the Python runner */
+  stl?: string;
   name?: string;
 }
 

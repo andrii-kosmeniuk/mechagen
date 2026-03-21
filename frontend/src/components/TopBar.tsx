@@ -2,6 +2,16 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { AppUser } from '../types';
 import { useTheme } from '../context/ThemeContext';
 
+const ANALYSIS_TABS = [
+  { id: 'explode',    icon: '💥', label: 'EXPLODE' },
+  { id: 'dims',       icon: '📐', label: 'DIMS' },
+  { id: 'simulate',   icon: '⚡', label: 'SIMULATE' },
+  { id: 'ar',         icon: '📱', label: 'AR' },
+  { id: 'kinematics', icon: '⚙️', label: 'KINEMATICS' },
+  { id: 'loadpath',   icon: '🔗', label: 'LOAD PATH' },
+  { id: 'parametric', icon: '🔢', label: 'PARAMETRIC' },
+];
+
 type Props = {
   user: AppUser;
   onSignOut: () => void;
@@ -10,130 +20,77 @@ type Props = {
 export function TopBar({ user, onSignOut }: Props) {
   const { theme, toggleTheme } = useTheme();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [navOpen, setNavOpen] = useState(false);
+  const [activeAnalysis, setActiveAnalysis] = useState('');
   const topbarRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      const t = e.target as Node;
-      if (topbarRef.current && !topbarRef.current.contains(t)) {
+    function close(e: MouseEvent) {
+      if (topbarRef.current && !topbarRef.current.contains(e.target as Node)) {
         setUserMenuOpen(false);
-        setNavOpen(false);
       }
     }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        setUserMenuOpen(false);
-        setNavOpen(false);
-      }
-    }
-    document.addEventListener('click', onDocClick);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('click', onDocClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, []);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 901px)');
-    const closeNavIfDesktop = () => {
-      if (mq.matches) setNavOpen(false);
-    };
-    mq.addEventListener('change', closeNavIfDesktop);
-    return () => mq.removeEventListener('change', closeNavIfDesktop);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
   }, []);
 
   const initial = user.name?.[0]?.toUpperCase() || 'U';
 
   return (
-    <header className="topbar" ref={topbarRef}>
-      <div className="logo">
-        <span style={{ color: 'var(--accent-blue)' }}>⬡</span>
-        <span className="logo-text">MECHAGEN PRO</span>
-      </div>
+    <header className="topbar" ref={topbarRef} style={{ flexDirection: 'column', height: 'auto', padding: 0, gap: 0 }}>
+      {/* Top row: logo + nav */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', height: 44, borderBottom: '1px solid var(--border)', width: '100%', boxSizing: 'border-box' }}>
+        <div className="logo">
+          <span style={{ color: 'var(--accent-blue)' }}>⬡</span>
+          <span className="logo-text">MECHAGEN</span>
+        </div>
 
-      <div className="topbar-end">
-        <button
-          type="button"
-          className="topbar-burger chip"
-          aria-expanded={navOpen}
-          aria-controls="topbar-nav"
-          aria-label={navOpen ? 'Close menu' : 'Open menu'}
-          onClick={(e) => {
-            e.stopPropagation();
-            setNavOpen((o) => !o);
-            setUserMenuOpen(false);
-          }}
-        >
-          {navOpen ? '✕' : '☰'}
-        </button>
-
-        <nav
-          id="topbar-nav"
-          className={`topbar-nav${navOpen ? ' topbar-nav--open' : ''}`}
-        >
-          <button type="button" className="chip" onClick={() => setNavOpen(false)}>
-            📊 Dashboard
-          </button>
-          <button type="button" className="chip" onClick={() => setNavOpen(false)}>
-            🧠 Memory
-          </button>
-          <button type="button" className="chip" onClick={() => setNavOpen(false)}>
-            📋 Versions
-          </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button type="button" className="chip" title="Remix" style={{ fontSize: 11 }}>⚡ Remix</button>
+          <button type="button" className="chip" title="Preview device" style={{ fontSize: 11 }}>📱 Device</button>
+          <button type="button" className="chip" title="AI Chat" style={{ fontSize: 11 }}>🤖 AI Chat</button>
           <button
             type="button"
             className="chip"
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleTheme();
-            }}
-            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            onClick={toggleTheme}
+            title="Toggle theme"
+            style={{ fontSize: 11 }}
           >
-            {theme === 'dark' ? '🌙 Light' : '☀️ Dark'}
+            {theme === 'dark' ? '☀️' : '🌙'}
           </button>
-        </nav>
-
-        <div
-          className="user-avatar-wrap"
-          onClick={(e) => {
-            e.stopPropagation();
-            setUserMenuOpen((o) => !o);
-            setNavOpen(false);
-          }}
-        >
-          <span className="user-avatar-initial">{initial}</span>
-          <div
-            className="user-dropdown"
-            style={{ display: userMenuOpen ? 'block' : 'none' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="user-info-block">
-              <div className="user-dropdown-name">{user.name}</div>
-              <div className="user-dropdown-email">{user.email}</div>
-              <div className="status-badge inline-badge user-dropdown-role">
-                {user.role}
+          <div className="user-avatar-wrap" onClick={e => { e.stopPropagation(); setUserMenuOpen(o => !o); }}>
+            <span className="user-avatar-initial">{initial}</span>
+            <div className="user-dropdown" style={{ display: userMenuOpen ? 'block' : 'none' }} onClick={e => e.stopPropagation()}>
+              <div className="user-info-block">
+                <div className="user-dropdown-name">{user.name}</div>
+                <div className="user-dropdown-email">{user.email}</div>
               </div>
+              <button type="button" className="btn-primary w-full signout-btn" onClick={onSignOut}>Sign Out</button>
             </div>
-            <button type="button" className="chip w-full text-left mb-4">
-              My Profile
-            </button>
-            <button type="button" className="chip w-full text-left mb-4">
-              Team Settings
-            </button>
-            <button type="button" className="chip w-full text-left mb-1">
-              Usage
-            </button>
-            <button
-              type="button"
-              className="btn-primary w-full signout-btn"
-              onClick={onSignOut}
-            >
-              Sign Out
-            </button>
           </div>
         </div>
+      </div>
+
+      {/* Bottom row: analysis mode tabs */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '0 16px', height: 36, overflowX: 'auto', scrollbarWidth: 'none' }}>
+        {ANALYSIS_TABS.map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveAnalysis(s => s === tab.id ? '' : tab.id)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '4px 12px', borderRadius: 5, fontSize: 11, fontWeight: 500,
+              fontFamily: 'inherit', cursor: 'pointer', whiteSpace: 'nowrap',
+              border: activeAnalysis === tab.id ? '1px solid var(--accent-blue)' : '1px solid transparent',
+              background: activeAnalysis === tab.id ? 'rgba(126,184,247,0.1)' : 'transparent',
+              color: activeAnalysis === tab.id ? 'var(--accent-blue)' : 'var(--text-muted)',
+              transition: 'all 0.15s',
+            }}
+          >
+            <span style={{ fontSize: 12 }}>{tab.icon}</span>
+            {tab.label.toUpperCase()}
+          </button>
+        ))}
       </div>
     </header>
   );

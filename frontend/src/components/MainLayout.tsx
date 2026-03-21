@@ -6,7 +6,6 @@ import { TopBar } from './TopBar';
 import { LeftPanel } from './LeftPanel';
 import { ChatPanel } from './ChatPanel';
 import { createApi } from '../lib/api';
-import { MATERIALS_DB } from '../lib/constants';
 import { useToast } from '../context/ToastContext';
 import { useTheme } from '../context/ThemeContext';
 import type { AppUser, GeomData, HistoryPart } from '../types';
@@ -37,14 +36,15 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
     role: (session.user.user_metadata?.role as string) || 'engineer',
   };
 
-  const [activeTab, setActiveTab] = useState('design');
   const [projectName, setProjectName] = useState('New Mechanical Part');
   const [projectDesc, setProjectDesc] = useState('');
   const [prompt, setPrompt] = useState('');
   const [multiAgent, setMultiAgent] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [materialKey, setMaterialKey] = useState('steel');
-  const [scale, setScale] = useState({ x: 1, y: 1, z: 1 });
+  const [materialKey, setMaterialKey] = useState('aluminum');
+  const [wireframe, setWireframe] = useState(false);
+  const [modelOpacity, setModelOpacity] = useState(1);
+  const displayScale = { x: 1, y: 1, z: 1 };
   const [analysisText, setAnalysisText] = useState(
     'Run analysis to see results...'
   );
@@ -53,17 +53,14 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
   const [historyParts, setHistoryParts] = useState<HistoryPart[]>([]);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
+  const [highDetail, setHighDetail] = useState(false);
   const currentProjectId = 'default-project';
 
-  const costLabel = (() => {
-    const mat = MATERIALS_DB[materialKey];
-    if (!geomData || !mat) return '$0.00';
-    const volume = 0.001;
-    const mass = volume * mat.density * 1000;
-    return `$${(mass * mat.costPerKg).toFixed(2)}`;
-  })();
-
   const initRealtime = useCallback(() => {
+    const wsUrl = import.meta.env.VITE_WS_URL as string | undefined;
+    if (!wsUrl?.trim()) {
+      return; // No collab server — skip (plain backend/server.js has no WebSocket)
+    }
     if (
       socketRef.current &&
       (socketRef.current.readyState === WebSocket.OPEN ||
@@ -75,12 +72,9 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
       clearInterval(realtimeIntervalRef.current);
       realtimeIntervalRef.current = null;
     }
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Backend runs on port 3001; Vite dev server is a different port
-    const backendHost = window.location.hostname + ':3001';
     let socket: WebSocket;
     try {
-      socket = new WebSocket(`${protocol}//${backendHost}`);
+      socket = new WebSocket(wsUrl.trim());
     } catch {
       return; // WebSocket not supported or backend has no WS — skip silently
     }
@@ -172,29 +166,41 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({
+          prompt,
+          highDetail,
+          context: projectDesc.trim() || undefined,
+          projectName: projectName.trim() || undefined,
+        }),
       });
       console.log('[Generate] Response status:', res.status);
       const text = await res.text();
       console.log('[Generate] Raw response:', text.slice(0, 500));
 
-      let data: GeomData;
+      let data: GeomData & { error?: string };
       try { data = JSON.parse(text); }
       catch { throw new Error('Backend returned invalid JSON: ' + text.slice(0, 200)); }
 
       if (!res.ok) {
-        const errMsg = (data as unknown as { error?: string }).error || `Server error ${res.status}`;
+        const errMsg = data.error || `Server error ${res.status}`;
         throw new Error(errMsg);
       }
 
-      if (!data.code || typeof data.code !== 'string' || data.code.trim().length < 30) {
-        throw new Error('AI returned empty JSCAD code. Try a different prompt.');
+      const hasStl = typeof data.stl === 'string' && data.stl.length > 50;
+      const okCode =
+        typeof data.code === 'string' && data.code.trim().length >= 30;
+      if (!hasStl && !okCode) {
+        throw new Error('AI returned no usable geometry. Try a different prompt.');
       }
 
-      console.log('[Generate] OK — code length:', data.code.length);
-      setGeomData(data);
+      console.log('[Generate] OK —', hasStl ? `stl ${data.stl?.length ?? 0} b64 chars` : `code length ${data.code.length}`);
+      setGeomData({
+        code: typeof data.code === 'string' ? data.code : '',
+        stl: hasStl ? data.stl : undefined,
+        name: data.name,
+      });
       setCurrentPartId(crypto.randomUUID());
-      showToast(`✓ Generated!`);
+      showToast(highDetail ? '✓ Generated (high detail)' : '✓ Generated!');
     } catch (e) {
       const msg = (e as Error).message || 'Unknown error';
       console.error('[Generate] FAILED:', msg);
@@ -232,37 +238,6 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
     }
   };
 
-  const onRecommendMaterial = async () => {
-    try {
-      const data = await api.post<{ material: string }>(
-        '/api/ai/recommend-material',
-        { partId: currentPartId }
-      );
-      if (data?.material) {
-        setMaterialKey(data.material);
-        showToast(`AI recommended: ${data.material}`);
-      }
-    } catch {
-      showToast('Recommendation unavailable', 'error');
-    }
-  };
-
-  const onVoiceInput = () => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      showToast('Speech recognition not supported in this browser', 'error');
-      return;
-    }
-    const recognition = new SR();
-    recognition.onstart = () => showToast('Listening...');
-    recognition.onresult = (event: Event) => {
-      const sr = event as unknown as { results: { [k: number]: { [k: number]: { transcript: string } } } };
-      const transcript = sr.results[0][0].transcript;
-      setPrompt(transcript);
-    };
-    recognition.start();
-  };
-
   const onShare = async () => {
     const shareData = btoa(
       JSON.stringify({ partId: currentPartId, time: Date.now() })
@@ -277,13 +252,13 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
     }
   };
 
+  const [cadCmd, setCadCmd] = useState('');
+
   return (
     <div className="main-shell">
       <TopBar user={user} onSignOut={onSignOut} />
       <div className="main-content">
         <LeftPanel
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
           projectName={projectName}
           setProjectName={setProjectName}
           projectDesc={projectDesc}
@@ -292,16 +267,15 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
           setPrompt={setPrompt}
           multiAgent={multiAgent}
           setMultiAgent={setMultiAgent}
+          highDetail={highDetail}
+          setHighDetail={setHighDetail}
+          wireframe={wireframe}
+          setWireframe={setWireframe}
+          modelOpacity={modelOpacity}
+          setModelOpacity={setModelOpacity}
           generating={generating}
           onGenerate={onGenerate}
           onImprovePrompt={onImprovePrompt}
-          onVoiceInput={onVoiceInput}
-          materialKey={materialKey}
-          setMaterialKey={setMaterialKey}
-          costLabel={costLabel}
-          onRecommendMaterial={onRecommendMaterial}
-          scale={scale}
-          setScale={setScale}
           analysisText={analysisText}
           onAnalyzePart={onAnalyzePart}
           onShare={onShare}
@@ -312,51 +286,95 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
             setGeomData(p.geomData);
           }}
         />
-        <main className="viewport-container">
+
+        <main className="viewport-container" style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
           <Viewport3D
             ref={viewportRef}
             geomData={geomData}
-            scale={scale}
+            scale={displayScale}
             theme={theme}
+            materialKey={materialKey}
+            wireframe={wireframe}
+            modelOpacity={modelOpacity}
           />
-          <div className="viewport-overlay">
-            <div className="overlay-top-left">
-              <div className="status-badge">Draft</div>
-              <div className="mt-2 flex-between gap-2" />
-            </div>
-            {genError && (
-              <div style={{
-                position: 'absolute', top: '50%', left: '50%',
-                transform: 'translate(-50%,-50%)',
-                background: 'rgba(0,0,0,0.85)', border: '1px solid var(--error)',
-                borderRadius: 8, padding: '1rem 1.5rem', maxWidth: '80%',
-                color: 'var(--error)', fontSize: '0.85rem', textAlign: 'center',
-                pointerEvents: 'none',
-              }}>
-                ⚠️ {genError}
-              </div>
-            )}
-            {generating && (
-              <div style={{
-                position: 'absolute', top: '50%', left: '50%',
-                transform: 'translate(-50%,-50%)',
-                background: 'rgba(0,0,0,0.7)', borderRadius: 8,
-                padding: '1rem 1.5rem', color: '#fff', fontSize: '0.85rem',
-                pointerEvents: 'none',
-              }}>
-                ⚙️ Generating 3D model…
-              </div>
-            )}
-            <div className="viewport-bottom-actions">
-              <button type="button" className="chip">
-                Submit for Review
-              </button>
-              <button type="button" className="chip">
-                Reset View
-              </button>
+
+          {/* Perspective label top-right */}
+          <div style={{
+            position: 'absolute', top: 10, right: 12,
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4,
+            pointerEvents: 'none',
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.1em' }}>PERSPECTIVE</div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[['X','#f97316'],['Y','#5ab85a'],['Z','#7eb8f7']].map(([ax, col]) => (
+                <span key={ax} style={{ fontSize: 10, fontWeight: 700, color: col }}>{ax}</span>
+              ))}
             </div>
           </div>
+
+          {/* Status badge top-left */}
+          <div style={{ position: 'absolute', top: 10, left: 12, pointerEvents: 'none' }}>
+            <div className="status-badge">DRAFT</div>
+          </div>
+
+          {/* Generation overlay */}
+          {generating && (
+            <div style={{
+              position: 'absolute', top: '50%', left: '50%',
+              transform: 'translate(-50%,-50%)',
+              background: 'rgba(5,5,13,0.88)', border: '1px solid var(--border)',
+              borderRadius: 10, padding: '16px 24px', color: 'var(--accent-blue)',
+              fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 10,
+              pointerEvents: 'none',
+            }}>
+              <span style={{ animation: 'spin 0.8s linear infinite', display: 'inline-block' }}>⚙️</span>
+              Generating 3D model…
+            </div>
+          )}
+          {genError && !generating && (
+            <div style={{
+              position: 'absolute', top: '50%', left: '50%',
+              transform: 'translate(-50%,-50%)',
+              background: 'rgba(0,0,0,0.85)', border: '1px solid var(--error)',
+              borderRadius: 8, padding: '1rem 1.5rem', maxWidth: '80%',
+              color: 'var(--error)', fontSize: '0.85rem', textAlign: 'center',
+              pointerEvents: 'none',
+            }}>
+              ⚠️ {genError}
+            </div>
+          )}
+
+          {/* CAD command bar */}
+          <div style={{
+            position: 'absolute', bottom: 36, left: '50%', transform: 'translateX(-50%)',
+            width: 360, maxWidth: '70%',
+          }}>
+            <input
+              value={cadCmd}
+              onChange={e => setCadCmd(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { showToast(`CAD: ${cadCmd}`); setCadCmd(''); } }}
+              placeholder="Type a CAD command... (e.g. 'rotate 90deg X')"
+              style={{
+                width: '100%', padding: '8px 14px', boxSizing: 'border-box',
+                background: 'rgba(5,5,13,0.82)', border: '1px solid rgba(126,184,247,0.25)',
+                borderRadius: 8, color: 'var(--text)', fontSize: 12, fontFamily: 'inherit',
+                backdropFilter: 'blur(6px)',
+              }}
+            />
+          </div>
+
+          {/* Control hints */}
+          <div style={{
+            position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)',
+            display: 'flex', gap: 16, fontSize: 9, color: 'var(--text-muted)',
+            fontWeight: 600, letterSpacing: '0.05em', pointerEvents: 'none', whiteSpace: 'nowrap',
+          }}>
+            <span>DRAG TO ROTATE</span>
+            <span>SCROLL TO ZOOM</span>
+            <span>RIGHT-DRAG TO PAN</span>
+          </div>
         </main>
+
         <ChatPanel />
       </div>
     </div>

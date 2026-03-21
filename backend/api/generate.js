@@ -1,8 +1,6 @@
 'use strict';
 
-const { sanitizeRequest }     = require('../lib/sanitize');
-const { callNemotron }        = require('../lib/ai');
-const { parseGeometryResponse } = require('../lib/geometry');
+const { executeGenerate } = require('../lib/executeGenerate');
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin':  '*',
@@ -26,35 +24,12 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST')   return sendError(res, 405, 'POST only');
 
-  // 1. Validate input
-  const { value: input, error, status } = sanitizeRequest(req.body);
-  if (error) return sendError(res, status, error);
-
-  // 2. Call AI
-  let raw;
   try {
-    raw = await callNemotron(input.prompt, input.image);
+    const { stl, code } = await executeGenerate(req.body);
+    return res.status(200).json({ stl, code });
   } catch (err) {
-    console.error('[generate] AI call failed:', err.message);
-    return sendError(res, err.status ?? 500, err.message);
+    const status = err.status ?? 500;
+    if (status >= 500) console.error('[generate]', err.message);
+    return sendError(res, status, err.message);
   }
-
-  // 3. Parse and validate geometry
-  let geometry;
-  try {
-    geometry = parseGeometryResponse(raw);
-  } catch (err) {
-    if (err.validationErrors) {
-      console.error('[generate] Geometry validation:', err.validationErrors);
-    } else {
-      console.error('[generate] Parse failed:', err.message);
-    }
-    if (err instanceof SyntaxError) {
-      return sendError(res, 502, 'Model returned invalid JSON — please try again');
-    }
-    return sendError(res, 502, err.message || 'Model returned invalid geometry');
-  }
-
-  // 4. Respond
-  return res.status(200).json(geometry);
 };

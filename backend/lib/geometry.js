@@ -110,11 +110,18 @@ function parseGeometryResponse(raw) {
     .replace(/```\s*$/im, '')                  // strip closing fence
     .trim();
 
-  // Strip any preamble/explanation text before the actual JS code starts.
-  // The JSCAD mandatory block always starts with 'const {' or 'function main'
+  // ── Strip preamble text before the JS code ──
+  // AI often adds: "Here is the code for a hex nut M8:\n\nconst { ..."
   const codeStart = clean.search(/const\s*\{|function\s+main\s*\(/);
   if (codeStart > 0) {
     clean = clean.slice(codeStart);
+  }
+
+  // ── Strip trailing prose after the closing brace of main() ──
+  // AI often adds: "}\nThis code creates a hex nut with..."
+  const lastBrace = clean.lastIndexOf('\n}');
+  if (lastBrace !== -1) {
+    clean = clean.slice(0, lastBrace + 2); // keep the '\n}' itself
   }
 
   if (!clean || clean.length < 20) {

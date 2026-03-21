@@ -1,36 +1,36 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import type { HistoryPart } from '../types';
-import { WORKFLOW_COLORS } from '../lib/constants';
 
-const TABS = [
-  { id: 'design', icon: '✏️', label: 'Design' },
-  { id: 'engineer', icon: '📐', label: 'Engineer' },
-  { id: 'analyze', icon: '🔬', label: 'Analyze' },
-  { id: 'export', icon: '📦', label: 'Export' },
-  { id: 'history', icon: '🕐', label: 'History' },
-] as const;
+const QUICK_TEMPLATES = [
+  'Gear',
+  'Bolt',
+  'Bearing',
+  'Bracket',
+  'Arm Joint',
+  'Mount Plate',
+];
+
+type AgentMode = 'single' | 'multi' | 'adversarial' | 'swarm';
+type PanelPage = 'design' | 'export' | 'history';
 
 export type LeftPanelProps = {
-  activeTab: string;
-  setActiveTab: (id: string) => void;
   projectName: string;
   setProjectName: (v: string) => void;
   projectDesc: string;
   setProjectDesc: (v: string) => void;
   prompt: string;
-  setPrompt: (v: string) => void;
+  setPrompt: React.Dispatch<React.SetStateAction<string>>;
   multiAgent: boolean;
   setMultiAgent: (v: boolean) => void;
+  highDetail: boolean;
+  setHighDetail: (v: boolean) => void;
+  wireframe: boolean;
+  setWireframe: (v: boolean) => void;
+  modelOpacity: number;
+  setModelOpacity: (v: number) => void;
   generating: boolean;
   onGenerate: () => void;
   onImprovePrompt: () => void;
-  onVoiceInput: () => void;
-  materialKey: string;
-  setMaterialKey: (v: string) => void;
-  costLabel: string;
-  onRecommendMaterial: () => void;
-  scale: { x: number; y: number; z: number };
-  setScale: (s: { x: number; y: number; z: number }) => void;
   analysisText: string;
   onAnalyzePart: () => void;
   onShare: () => void;
@@ -41,273 +41,451 @@ export type LeftPanelProps = {
 
 export function LeftPanel(props: LeftPanelProps) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [agentMode, setAgentMode] = useState<AgentMode>('single');
+  const [page, setPage] = useState<PanelPage>('design');
+
+  const s: Record<string, React.CSSProperties> = {
+    panel: {
+      width: 280,
+      minWidth: 280,
+      height: '100%',
+      background: 'var(--panel-bg)',
+      borderRight: '1px solid var(--border)',
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+    },
+    header: {
+      flexShrink: 0,
+      padding: '10px 12px',
+      borderBottom: '1px solid var(--border)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+    },
+    brand: {
+      fontSize: 11,
+      fontWeight: 800,
+      letterSpacing: '0.12em',
+      color: 'var(--text)',
+    },
+    navLink: {
+      border: 'none',
+      background: 'transparent',
+      fontSize: 9,
+      fontWeight: 700,
+      letterSpacing: '0.08em',
+      color: 'var(--text-muted)',
+      cursor: 'pointer',
+      fontFamily: 'inherit',
+      padding: '4px 6px',
+      borderRadius: 4,
+    },
+    navLinkOn: {
+      color: 'var(--accent-blue)',
+      background: 'rgba(126,184,247,0.1)',
+    },
+    scroll: {
+      flex: 1,
+      overflowY: 'auto',
+      padding: '12px 12px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 12,
+    },
+    sectionTitle: {
+      fontSize: 9,
+      fontWeight: 700,
+      letterSpacing: '0.1em',
+      color: 'var(--text-muted)',
+      textTransform: 'uppercase',
+      marginBottom: 6,
+    },
+    input: {
+      width: '100%',
+      padding: '8px 10px',
+      background: 'var(--input-bg)',
+      border: '1px solid var(--border)',
+      borderRadius: 6,
+      color: 'var(--text)',
+      fontSize: 12,
+      fontFamily: 'inherit',
+      boxSizing: 'border-box',
+    },
+    textarea: {
+      width: '100%',
+      padding: '8px 10px',
+      background: 'var(--input-bg)',
+      border: '1px solid var(--border)',
+      borderRadius: 6,
+      color: 'var(--text)',
+      fontSize: 12,
+      fontFamily: 'inherit',
+      resize: 'vertical',
+      boxSizing: 'border-box',
+    },
+    uploadBox: {
+      border: '1px dashed var(--border)',
+      borderRadius: 8,
+      padding: '12px 10px',
+      textAlign: 'center',
+      fontSize: 10,
+      color: 'var(--text-muted)',
+      cursor: 'pointer',
+    },
+    chip: {
+      padding: '5px 8px',
+      borderRadius: 4,
+      fontSize: 9,
+      fontWeight: 700,
+      border: '1px solid var(--border)',
+      background: 'var(--input-bg)',
+      color: 'var(--text-muted)',
+      cursor: 'pointer',
+      fontFamily: 'inherit',
+      letterSpacing: '0.04em',
+    },
+    chipActive: {
+      background: 'rgba(126,184,247,0.12)',
+      borderColor: 'var(--accent-blue)',
+      color: 'var(--accent-blue)',
+    },
+    btnPrimary: {
+      width: '100%',
+      padding: '11px 10px',
+      background: 'var(--accent-blue)',
+      border: 'none',
+      borderRadius: 8,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 11,
+      letterSpacing: '0.06em',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      fontFamily: 'inherit',
+    },
+    btnGhost: {
+      width: '100%',
+      padding: '8px 10px',
+      background: 'transparent',
+      border: '1px solid var(--border)',
+      borderRadius: 6,
+      color: 'var(--text-muted)',
+      fontWeight: 600,
+      fontSize: 11,
+      cursor: 'pointer',
+      fontFamily: 'inherit',
+    },
+    templatesRow: { display: 'flex', flexWrap: 'wrap', gap: 5 },
+    agentGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 },
+    agentBtn: {
+      padding: '7px 6px',
+      borderRadius: 6,
+      fontSize: 9,
+      fontWeight: 600,
+      border: '1px solid var(--border)',
+      background: 'var(--input-bg)',
+      color: 'var(--text-muted)',
+      cursor: 'pointer',
+      textAlign: 'center',
+      fontFamily: 'inherit',
+      lineHeight: 1.25,
+    },
+    agentBtnA: {
+      background: 'rgba(126,184,247,0.12)',
+      borderColor: 'var(--accent-blue)',
+      color: 'var(--accent-blue)',
+    },
+    divider: { height: 1, background: 'var(--border)', margin: '2px 0' },
+    iconRow: { display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' },
+    iconBtn: {
+      flex: 1,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      padding: '7px 8px',
+      borderRadius: 6,
+      border: '1px solid var(--border)',
+      background: 'var(--input-bg)',
+      color: 'var(--text-muted)',
+      fontSize: 10,
+      fontWeight: 600,
+      cursor: 'pointer',
+      fontFamily: 'inherit',
+    },
+    iconBtnOn: {
+      borderColor: 'var(--accent-blue)',
+      color: 'var(--accent-blue)',
+      background: 'rgba(126,184,247,0.1)',
+    },
+    rangeLabel: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      fontSize: 9,
+      fontWeight: 700,
+      letterSpacing: '0.08em',
+      color: 'var(--text-muted)',
+      marginBottom: 4,
+    },
+  };
 
   return (
-    <aside className="left-panel">
-      <div className="tabs-header">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`tab-btn ${props.activeTab === t.id ? 'active' : ''}`}
-            onClick={() => props.setActiveTab(t.id)}
-          >
-            <span>{t.icon}</span>
-            <span>{t.label}</span>
-          </button>
-        ))}
+    <aside style={s.panel}>
+      <div style={s.header}>
+        <span style={s.brand}>⬡ MECHAGEN</span>
+        <div style={{ display: 'flex', gap: 2 }}>
+          {(['design', 'export', 'history'] as const).map((id) => (
+            <button
+              key={id}
+              type="button"
+              style={{
+                ...s.navLink,
+                ...(page === id ? s.navLinkOn : {}),
+              }}
+              onClick={() => setPage(id)}
+            >
+              {id.toUpperCase()}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="tab-content">
-        <div
-          className={`tab-pane ${props.activeTab === 'design' ? 'active' : ''}`}
-        >
-          <div className="input-group">
-            <label className="section-title">Project Info</label>
-            <input
-              type="text"
-              placeholder="Project Name"
-              value={props.projectName}
-              onChange={(e) => props.setProjectName(e.target.value)}
-            />
-            <textarea
-              placeholder="Description..."
-              rows={2}
-              value={props.projectDesc}
-              onChange={(e) => props.setProjectDesc(e.target.value)}
-            />
-          </div>
-          <div
-            className="card drop-zone"
-            onClick={() => fileRef.current?.click()}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') fileRef.current?.click();
-            }}
-            role="button"
-            tabIndex={0}
-          >
-            <p className="muted small">
-              Drag & drop reference files or click to upload
-            </p>
-            <input ref={fileRef} type="file" className="hidden-input" />
-          </div>
-          <div className="input-group">
-            <label className="section-title">AI Generation</label>
-            <textarea
-              placeholder="Describe the part you want to generate..."
-              rows={4}
-              value={props.prompt}
-              onChange={(e) => props.setPrompt(e.target.value)}
-            />
-            <div className="flex-between mt-4">
-              <button
-                type="button"
-                className="chip"
-                onClick={props.onImprovePrompt}
-              >
-                ✨ Improve
-              </button>
-              <button
-                type="button"
-                className="chip"
-                onClick={props.onVoiceInput}
-              >
-                🎤 Voice
-              </button>
+      <div style={s.scroll}>
+        {page === 'design' && (
+          <>
+            <div>
+              <div style={s.sectionTitle}>Project name</div>
+              <input
+                style={s.input}
+                placeholder="e.g. Spindle gear hub"
+                value={props.projectName}
+                onChange={(e) => props.setProjectName(e.target.value)}
+              />
             </div>
-          </div>
-          <div className="section-title">Quick Templates</div>
-          <div className="chip-grid">
-            {['Gear', 'Bolt', 'Bearing', 'Bracket', 'Arm Joint', 'Mount Plate'].map(
-              (label) => (
+
+            <div>
+              <div style={s.sectionTitle}>Project description / goals</div>
+              <textarea
+                style={{ ...s.textarea, minHeight: 56 }}
+                placeholder="Constraints sent with Generate — single solid, material, fit…"
+                rows={2}
+                value={props.projectDesc}
+                onChange={(e) => props.setProjectDesc(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <div style={s.sectionTitle}>Upload blueprints, specs, references</div>
+              <div style={s.uploadBox} onClick={() => fileRef.current?.click()}>
+                Drop files or click · PDF, JPG, STEP…
+              </div>
+              <input ref={fileRef} type="file" style={{ display: 'none' }} multiple />
+            </div>
+
+            <div>
+              <div style={s.sectionTitle}>Describe the part</div>
+              <textarea
+                style={{ ...s.textarea, minHeight: 72 }}
+                placeholder="Teeth, bore, keyway, chamfers…"
+                rows={3}
+                value={props.prompt}
+                onChange={(e) => props.setPrompt(e.target.value)}
+              />
+              <div style={s.iconRow}>
                 <button
-                  key={label}
                   type="button"
-                  className="chip template-chip"
-                  onClick={() =>
-                    props.setPrompt(`Design a mechanical ${label.toLowerCase()}`)
-                  }
+                  title="High detail — finer mesh, slower"
+                  style={{
+                    ...s.iconBtn,
+                    ...(props.highDetail ? s.iconBtnOn : {}),
+                  }}
+                  onClick={() => props.setHighDetail(!props.highDetail)}
+                  disabled={props.generating}
                 >
-                  {label}
+                  <span aria-hidden>⚡</span> High detail
                 </button>
-              )
-            )}
-          </div>
-          <div className="mt-4 flex-between gap-2">
+                <button
+                  type="button"
+                  title="Polish prompt with AI"
+                  style={s.iconBtn}
+                  onClick={props.onImprovePrompt}
+                  disabled={props.generating}
+                >
+                  <span aria-hidden>✨</span> Polish
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <div style={s.templatesRow}>
+                {QUICK_TEMPLATES.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    style={s.chip}
+                    onClick={() =>
+                      props.setPrompt((p) => (p ? `${p}\n` : '') + `a ${t.toLowerCase()}`)
+                    }
+                  >
+                    {t.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={s.divider} />
+
+            <div>
+              <div style={s.sectionTitle}>Agent mode</div>
+              <div style={s.agentGrid}>
+                {(
+                  [
+                    ['single', 'Single agent'],
+                    ['multi', 'Multi-agent'],
+                    ['adversarial', 'Adversarial (GAN)'],
+                    ['swarm', 'Swarm design'],
+                  ] as [AgentMode, string][]
+                ).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    style={{
+                      ...s.agentBtn,
+                      ...(agentMode === mode ? s.agentBtnA : {}),
+                    }}
+                    onClick={() => {
+                      setAgentMode(mode);
+                      props.setMultiAgent(mode !== 'single');
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={s.divider} />
+
+            <div>
+              <div style={s.rangeLabel}>
+                <span>WIREFRAME</span>
+                <span style={{ color: 'var(--text)' }}>
+                  {props.wireframe ? 'ON' : 'OFF'}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={1}
+                value={props.wireframe ? 1 : 0}
+                onChange={(e) => props.setWireframe(Number(e.target.value) > 0)}
+                style={{ width: '100%', accentColor: 'var(--accent-blue)' }}
+              />
+            </div>
+
+            <div>
+              <div style={s.rangeLabel}>
+                <span>OPACITY</span>
+                <span style={{ color: 'var(--text)' }}>
+                  {Math.round(props.modelOpacity * 100)}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0.15}
+                max={1}
+                step={0.05}
+                value={props.modelOpacity}
+                onChange={(e) => props.setModelOpacity(parseFloat(e.target.value))}
+                style={{ width: '100%', accentColor: 'var(--accent-blue)' }}
+              />
+            </div>
+
             <button
               type="button"
-              className={`btn-primary w-full ${props.generating ? 'loading' : ''}`}
+              style={{ ...s.btnPrimary, opacity: props.generating ? 0.75 : 1 }}
               onClick={props.onGenerate}
               disabled={props.generating}
             >
-              <span className="btn-text">Generate</span>
-              <span className="spinner" aria-hidden />
+              <span aria-hidden>⚡</span>
+              {props.generating ? 'GENERATING…' : 'GENERATE PART'}
             </button>
-            <button type="button" className="chip">
-              Variants
-            </button>
-          </div>
-          <div className="mt-4 card">
-            <div className="flex-between">
-              <span className="small">Multi-Agent Mode</span>
-              <input
-                type="checkbox"
-                checked={props.multiAgent}
-                onChange={(e) => props.setMultiAgent(e.target.checked)}
-              />
-            </div>
-          </div>
-        </div>
+          </>
+        )}
 
-        <div
-          className={`tab-pane ${props.activeTab === 'engineer' ? 'active' : ''}`}
-        >
-          <label className="section-title">Material Selection</label>
-          <select
-            className="w-full"
-            value={props.materialKey}
-            onChange={(e) => props.setMaterialKey(e.target.value)}
-          >
-            <option value="steel">Stainless Steel 316L</option>
-            <option value="aluminum">Aluminum 6061-T6</option>
-            <option value="titanium">Titanium Grade 5</option>
-            <option value="abs">ABS Plastic</option>
-            <option value="carbon">Carbon Fiber Reinforced</option>
-          </select>
-          <button
-            type="button"
-            className="chip mt-4 w-full"
-            onClick={props.onRecommendMaterial}
-          >
-            AI Recommend Material
-          </button>
-          <div className="card mt-4">
-            <div className="flex-between">
-              <span className="small">Estimated Cost</span>
-              <span className="cost-display">{props.costLabel}</span>
-            </div>
-          </div>
-          <label className="section-title">Parametric Controls</label>
-          <div className="input-group">
-            {(['x', 'y', 'z'] as const).map((axis) => (
-              <React.Fragment key={axis}>
-                <span className="tiny">Scale {axis.toUpperCase()}</span>
-                <input
-                  type="range"
-                  min={0.1}
-                  max={5}
-                  step={0.1}
-                  value={props.scale[axis]}
-                  onChange={(e) =>
-                    props.setScale({
-                      ...props.scale,
-                      [axis]: parseFloat(e.target.value),
-                    })
-                  }
-                />
-              </React.Fragment>
+        {page === 'export' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={s.sectionTitle}>Export</div>
+            {['STL', 'STEP', 'OBJ', 'GLTF'].map((fmt) => (
+              <button key={fmt} type="button" style={s.btnGhost}>
+                ↓ {fmt}
+              </button>
             ))}
-          </div>
-        </div>
-
-        <div
-          className={`tab-pane ${props.activeTab === 'analyze' ? 'active' : ''}`}
-        >
-          <button
-            type="button"
-            className="btn-primary w-full"
-            onClick={props.onAnalyzePart}
-          >
-            Analyze Part
-          </button>
-          <div className="chip-grid mt-4">
-            {['FMEA', 'Predict Failure', 'Assembly Check', 'Manufacturing'].map(
-              (l) => (
-                <button key={l} type="button" className="chip">
-                  {l}
-                </button>
-              )
+            <div style={s.divider} />
+            <div style={s.sectionTitle}>Analysis</div>
+            <button type="button" style={s.btnGhost} onClick={props.onAnalyzePart}>
+              Run analysis
+            </button>
+            <div
+              style={{
+                fontSize: 11,
+                color: 'var(--text-muted)',
+                lineHeight: 1.5,
+                marginTop: 6,
+              }}
+            >
+              {props.analysisText}
+            </div>
+            <div style={s.divider} />
+            <div style={s.sectionTitle}>Share</div>
+            <button type="button" style={s.btnPrimary} onClick={props.onShare}>
+              Link + QR
+            </button>
+            {props.qrDataUrl && (
+              <img
+                src={props.qrDataUrl}
+                alt="Share QR"
+                style={{ width: '100%', borderRadius: 8 }}
+              />
             )}
           </div>
-          <div className="card mt-4 analysis-results">{props.analysisText}</div>
-          <label className="section-title">Simulations</label>
-          <div className="flex-between gap-2">
-            <button type="button" className="chip w-full">
-              Kinematics
-            </button>
-            <button type="button" className="chip w-full">
-              Load Path
-            </button>
-          </div>
-        </div>
+        )}
 
-        <div
-          className={`tab-pane ${props.activeTab === 'export' ? 'active' : ''}`}
-        >
-          <div className="chip-grid">
-            <button type="button" className="chip">
-              OBJ Export
-            </button>
-            <button type="button" className="chip">
-              STL Export
-            </button>
-            <button type="button" className="chip">
-              Screenshot
-            </button>
-            <button type="button" className="chip" onClick={props.onShare}>
-              Share Link
-            </button>
-          </div>
-          <button type="button" className="btn-primary w-full mt-4">
-            Generate Documentation
-          </button>
-          <button type="button" className="chip w-full mt-2">
-            Code Generator
-          </button>
-          {props.qrDataUrl ? (
-            <div className="qrcode-wrap mt-4">
-              <img src={props.qrDataUrl} alt="Share QR" width={128} height={128} />
-            </div>
-          ) : null}
-        </div>
-
-        <div
-          className={`tab-pane ${props.activeTab === 'history' ? 'active' : ''}`}
-        >
-          <label className="section-title">Recent Parts</label>
-          <div id="history-list">
+        {page === 'history' && (
+          <div>
+            <div style={s.sectionTitle}>History</div>
             {props.historyParts.length === 0 ? (
-              <p className="muted small">No history yet.</p>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                No parts yet. Generate one from Design.
+              </div>
             ) : (
-              props.historyParts.map((part) => (
+              props.historyParts.map((p) => (
                 <button
-                  key={part.id}
+                  key={p.id}
                   type="button"
-                  className="card history-card w-full text-left"
-                  onClick={() => props.onSelectHistoryPart(part)}
+                  style={{
+                    ...s.chip,
+                    width: '100%',
+                    textAlign: 'left',
+                    marginBottom: 6,
+                  }}
+                  onClick={() => {
+                    props.onSelectHistoryPart(p);
+                    setPage('design');
+                  }}
                 >
-                  <div className="flex-between">
-                    <span className="part-name">{part.name}</span>
-                    <span
-                      className="status-badge"
-                      style={{
-                        background:
-                          WORKFLOW_COLORS[
-                            part.status as keyof typeof WORKFLOW_COLORS
-                          ] || '#888',
-                      }}
-                    >
-                      {part.status}
-                    </span>
-                  </div>
-                  <div className="muted tiny mt-4">
-                    {new Date(part.createdAt).toLocaleString()}
-                  </div>
+                  {p.name}
                 </button>
               ))
             )}
           </div>
-        </div>
+        )}
       </div>
     </aside>
   );

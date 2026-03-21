@@ -4,9 +4,11 @@
   "description": "MechaGen AI geometry generation backend",
   "engines": { "node": ">=18.x" },
   "scripts": {
-    "start": "vercel dev --listen 3001",
-    "lint":  "node --check lib/ai.js lib/geometry.js lib/sanitize.js api/generate.js"
+    "start": "node server.js",
+    "dev":   "node server.js",
+    "lint":  "node --check lib/ai.js lib/cadquerySystemPrompt.js lib/geometry.js lib/sanitize.js lib/executeGenerate.js api/generate.js"
   },
+
   "devDependencies": {
     "vercel": "latest"
   }

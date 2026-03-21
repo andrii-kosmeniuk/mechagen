@@ -1,11 +1,13 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import apiPlugin from './vite-api-plugin.js';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     plugins: [
       react(),
+      apiPlugin(),
       {
         name: 'inject-supabase-into-index-html',
         transformIndexHtml(html) {
@@ -18,12 +20,7 @@ export default defineConfig(({ mode }) => {
       },
     ],
     server: {
-      proxy: {
-        '/api': {
-          target: 'http://localhost:3001',
-          changeOrigin: true,
-        },
-      },
+      // No proxy needed — apiPlugin handles /api/* directly
     },
   };
 });

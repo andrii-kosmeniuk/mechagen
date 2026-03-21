@@ -6,6 +6,8 @@ import React, {
   useState,
 } from 'react';
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import type { Theme } from '../context/ThemeContext';
 import type { GeomData } from '../types';
 
@@ -18,6 +20,11 @@ type Props = {
   geomData: GeomData | null;
   scale: { x: number; y: number; z: number };
   theme: Theme;
+  /** Viewport PBR preset — keys match MATERIALS_DB in constants */
+  materialKey?: string;
+  wireframe?: boolean;
+  /** 0–1 mesh opacity (1 = solid) */
+  modelOpacity?: number;
 };
 
 // ── Color themes ──────────────────────────────────────────────────────
@@ -47,7 +54,7 @@ function makeMat(opts: { color?: string; metalness?: number; roughness?: number;
     color:              new THREE.Color(opts.color || '#8a9aaa'),
     metalness:          opts.metalness  ?? 0.92,
     roughness:          opts.roughness  ?? 0.15,
-    envMapIntensity:    opts.envMapIntensity ?? 3.0,
+    envMapIntensity:    opts.envMapIntensity ?? 1.05,
     clearcoat:          opts.clearcoat  ?? 0,
     clearcoatRoughness: 0.1,
   });
@@ -101,6 +108,137 @@ function centerAndScale(geo: THREE.BufferGeometry, targetSize = 3.2) {
   geo.scale(sc, sc, sc);
 }
 
+
+/** PBR for STL — scene.environment (IBL) required for believable metal */
+function createStlPbrMaterial(theme: Theme, materialKey: string): THREE.MeshPhysicalMaterial {
+  const light = theme === 'light';
+  const k = (materialKey || 'aluminum').toLowerCase();
+
+  if (k === 'aluminum' || k === 'alu') {
+    return new THREE.MeshPhysicalMaterial({
+      color: light ? 0xa8b4c2 : 0xd2dbe3,
+      metalness: 1,
+      roughness: light ? 0.44 : 0.36,
+      clearcoat: 0.18,
+      clearcoatRoughness: 0.12,
+      envMapIntensity: light ? 0.58 : 0.92,
+      ior: 1.39,
+      specularIntensity: 1,
+      specularColor: new THREE.Color(0xe8f2ff),
+    });
+  }
+
+  if (k === 'titanium') {
+    return new THREE.MeshPhysicalMaterial({
+      color: light ? 0x9aa0a8 : 0xc5cad1,
+      metalness: 0.98,
+      roughness: light ? 0.26 : 0.2,
+      clearcoat: 0.35,
+      clearcoatRoughness: 0.09,
+      envMapIntensity: light ? 0.62 : 1.05,
+      ior: 1.55,
+      specularIntensity: 1,
+      specularColor: new THREE.Color(0xffffff),
+    });
+  }
+
+  if (k === 'abs' || k === 'carbon') {
+    const darkPlast = k === 'carbon';
+    return new THREE.MeshPhysicalMaterial({
+      color: darkPlast ? (light ? 0x2a2d32 : 0x1a1c20) : light ? 0xd8dde4 : 0xaeb6c4,
+      metalness: darkPlast ? 0.08 : 0,
+      roughness: 0.55,
+      clearcoat: darkPlast ? 0.25 : 0.06,
+      clearcoatRoughness: 0.35,
+      envMapIntensity: light ? 0.35 : 0.5,
+      ior: 1.45,
+      specularIntensity: 0.35,
+      specularColor: new THREE.Color(0xffffff),
+    });
+  }
+
+  // steel (default)
+  return new THREE.MeshPhysicalMaterial({
+    color: light ? 0x8a9aad : 0xd0dae6,
+    metalness: 1,
+    roughness: light ? 0.28 : 0.18,
+    clearcoat: 0.45,
+    clearcoatRoughness: 0.08,
+    envMapIntensity: light ? 0.65 : 1.15,
+    ior: 1.465,
+    specularIntensity: 1,
+    specularColor: new THREE.Color(0xffffff),
+  });
+}
+
+function applyStlPbrTheme(mesh: THREE.Mesh, theme: Theme, materialKey: string) {
+  if (!mesh.userData.isStlMetal) return;
+  const prev = mesh.material as THREE.MeshPhysicalMaterial;
+  const next = createStlPbrMaterial(theme, materialKey);
+  prev.dispose();
+  mesh.material = next;
+  mesh.userData.stlMaterialKey = materialKey;
+}
+
+function loadStlBase64(b64: string, theme: Theme, materialKey: string): THREE.Group {
+  const binaryString = window.atob(b64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  const loader = new STLLoader();
+  const geometry = loader.parse(bytes.buffer);
+  geometry.computeVertexNormals();
+
+  const mat = createStlPbrMaterial(theme, materialKey);
+
+  const mesh = new THREE.Mesh(geometry, mat);
+  mesh.userData.isStlMetal = true;
+  mesh.userData.stlMaterialKey = materialKey;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+
+  // Center and scale to fit viewport loosely
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox!;
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  const pivotY = box.min.y;
+
+  mesh.position.set(-center.x, -pivotY, -center.z);
+
+  const group = new THREE.Group();
+  group.add(mesh);
+  // CadQuery normally exports Z-up. Threejs is Y-up.
+  group.rotation.x = -Math.PI / 2;
+
+  return group;
+}
+
+function applyMeshDisplay(root: THREE.Object3D, wireframe: boolean, opacity: number) {
+  const op = Math.min(1, Math.max(0, opacity));
+  root.traverse((obj) => {
+    if (obj instanceof THREE.Mesh && obj.material) {
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      for (const m of mats) {
+        const mat = m as THREE.Material & {
+          wireframe?: boolean;
+          transparent?: boolean;
+          opacity?: number;
+          depthWrite?: boolean;
+          needsUpdate?: boolean;
+        };
+        mat.wireframe = wireframe;
+        mat.transparent = op < 0.999;
+        mat.opacity = op;
+        if ('depthWrite' in mat) mat.depthWrite = op >= 0.99;
+        mat.needsUpdate = true;
+      }
+    }
+  });
+}
+
 function detectType(prompt: string): string {
   const p = (prompt || '').toLowerCase();
   if (p.includes('bearing'))                                    return 'bearing';
@@ -110,10 +248,102 @@ function detectType(prompt: string): string {
   return 'default';
 }
 
-function runCode(code: string): unknown {
-  // eslint-disable-next-line no-new-func
-  const fn = new Function('jscadModeling', code + '\nreturn main();');
-  return fn((window as unknown as { jscadModeling: unknown }).jscadModeling);
+function sanitizeJscadCode(raw: string): string {
+  let c = raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')       // strip CoT traces
+    .replace(/^```[\w]*\s*/gm, '').replace(/```\s*$/gm, '') // strip fences
+    .trim();
+
+  // Strip prose preamble — find where real JS starts
+  const jsStart = c.search(/^(?:const|let|var|function)\s/m);
+  if (jsStart > 0) c = c.slice(jsStart);
+
+  // Strip trailing prose the AI appends after closing brace
+  // Match the last '}' that sits at the start of a line (end of main())
+  const lastBrace = c.lastIndexOf('\n}');
+  if (lastBrace !== -1) {
+    c = c.slice(0, lastBrace + 2);
+  }
+
+  // Strip the AI's own destructure line — our preamble already provides all primitives
+  // This avoids "Identifier has already been declared" errors from double-const
+  c = c.replace(/^const\s*\{[\s\S]*?\}\s*=\s*jscadModeling\s*;?\s*\n?/m, '');
+
+  // If the AI forgot function main(), wrap the entire code body in one
+  if (!/function\s+main\s*\(/.test(c)) {
+    console.warn('[JSCAD] AI did not generate function main() — auto-wrapping');
+
+    // Find the last `return` statement to make sure it stays inside main()
+    // If there's no return, wrap everything and return the last union/subtract/etc call
+    const lines = c.trim().split('\n');
+    const hasReturn = lines.some(l => /^\s*return\s/.test(l));
+
+    if (hasReturn) {
+      c = 'function main() {\n' + c.trim() + '\n}';
+    } else {
+      // Find the last variable assignment and return it
+      let lastVar = 'undefined';
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const m = lines[i].match(/^\s*(?:const|let|var)\s+(\w+)\s*=/);
+        if (m) { lastVar = m[1]; break; }
+      }
+      c = 'function main() {\n' + c.trim() + '\nreturn ' + lastVar + ';\n}';
+    }
+  }
+
+  return c;
+}
+
+
+function runCode(codeStr: string): unknown {
+  const clean = sanitizeJscadCode(codeStr);
+  console.groupCollapsed('[JSCAD] Full generated code (' + clean.length + ' chars)');
+  console.log(clean);
+  console.groupEnd();
+
+  // Pre-inject ALL jscadModeling primitives so the AI's partial destructuring
+  // never causes "X is not defined" errors. We extract everything first,
+  // then the AI code can overwrite with its own const { ... } = jscadModeling.
+  const preamble = `
+    var jscadModeling = window.jscadModeling;
+    var cylinder = jscadModeling.primitives.cylinder;
+    var sphere = jscadModeling.primitives.sphere;
+    var cuboid = jscadModeling.primitives.cuboid;
+    var cube = jscadModeling.primitives.cuboid;
+    var torus = jscadModeling.primitives.torus;
+    var cylinderElliptic = jscadModeling.primitives.cylinderElliptic;
+    var roundedCuboid = jscadModeling.primitives.roundedCuboid;
+    var roundedCylinder = jscadModeling.primitives.roundedCylinder;
+    var polygon = jscadModeling.primitives.polygon;
+    var union = jscadModeling.booleans.union;
+    var subtract = jscadModeling.booleans.subtract;
+    var intersect = jscadModeling.booleans.intersect;
+    var translate = jscadModeling.transforms.translate;
+    var rotate = jscadModeling.transforms.rotate;
+    var scale = jscadModeling.transforms.scale;
+    var mirror = jscadModeling.transforms.mirror;
+    var center = jscadModeling.transforms.center;
+    var extrudeLinear = jscadModeling.extrusions.extrudeLinear;
+    var extrudeRotate = jscadModeling.extrusions.extrudeRotate;
+    var geom2 = jscadModeling.geometries.geom2;
+    var degToRad = jscadModeling.utils.degToRad;
+    var colorize = jscadModeling.colors.colorize;
+  `;
+
+  const wrapped = `(function() {\n${preamble}\n${clean}\nreturn main(); })()`;
+  try {
+    // eslint-disable-next-line no-eval
+    const result = (0, eval)(wrapped);
+    if (result === undefined || result === null) {
+      throw new Error('main() returned nothing — the JSCAD code may have a logic error');
+    }
+    return result;
+  } catch (e) {
+    const msg = (e as Error).message || String(e);
+    console.error('[JSCAD] Execution error:', msg);
+    console.error('[JSCAD] Full code that failed:\n' + clean);
+    throw new Error(`JSCAD error: ${msg}`);
+  }
 }
 
 // ── Bearing multi-component renderer ─────────────────────────────────
@@ -191,7 +421,10 @@ function main() {
 
 // ── Main component ────────────────────────────────────────────────────
 export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
-  function Viewport3D({ geomData, scale, theme }, ref) {
+    function Viewport3D(
+      { geomData, scale, theme, materialKey = 'aluminum', wireframe = false, modelOpacity = 1 },
+      ref
+    ) {
     const canvasRef    = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const sceneRef     = useRef<THREE.Scene | null>(null);
@@ -200,13 +433,14 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
     const groupRef     = useRef<THREE.Group | null>(null);
     const gridRef      = useRef<THREE.GridHelper | null>(null);
     const frameRef     = useRef<number>(0);
-    const themeRef     = useRef(theme);
-    const autoSpinRef  = useRef(false);
-    const promptRef    = useRef('');
-    themeRef.current   = theme;
+    const themeRef       = useRef(theme);
+    const materialKeyRef = useRef(materialKey);
+    const autoSpinRef    = useRef(false);
+    const promptRef      = useRef('');
+    themeRef.current     = theme;
+    materialKeyRef.current = materialKey;
 
     const [autoSpin, setAutoSpin] = useState(false);
-    const [wireframe, setWireframe] = useState(false);
     const [exploded, setExploded]   = useState(false);
     const [renderError, setRenderError] = useState<string | null>(null);
 
@@ -233,7 +467,16 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
       renderer.shadowMap.enabled = true;
       renderer.setSize(canvas.clientWidth, canvas.clientHeight);
       renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = isLight ? 0.96 : 0.86;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
       rendererRef.current = renderer;
+
+      const pmremGenerator = new THREE.PMREMGenerator(renderer);
+      pmremGenerator.compileEquirectangularShader();
+      const roomEnv = new RoomEnvironment();
+      const envRT = pmremGenerator.fromScene(roomEnv, 0.04);
+      scene.environment = envRT.texture;
 
       // Lighting
       scene.add(new THREE.AmbientLight(0x334466, 2));
@@ -331,25 +574,44 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
         window.removeEventListener('mouseup', onUp);
         canvas.removeEventListener('mousemove', onMove);
         canvas.removeEventListener('wheel', onWheel);
+        scene.environment = null;
+        envRT.dispose();
+        pmremGenerator.dispose();
         renderer.dispose();
         scene.clear();
       };
     }, []);
 
-    // ── Theme change ────────────────────────────────────────────────
+    // ── Theme change (background / grid / exposure) ─────────────────
     useEffect(() => {
       const scene = sceneRef.current;
       const grid  = gridRef.current;
-      if (!scene || !grid) return;
+      const renderer = rendererRef.current;
       const isLight = theme === 'light';
-      scene.background = new THREE.Color(isLight ? 0xdde2ee : 0x07070e);
-      scene.remove(grid);
-      grid.geometry.dispose();
-      const lc = isLight ? 0x9ca3b8 : 0x1e1e2e;
-      const newGrid = new THREE.GridHelper(10, 10, lc, lc);
-      gridRef.current = newGrid;
-      scene.add(newGrid);
+
+      if (renderer) {
+        renderer.toneMappingExposure = isLight ? 0.96 : 0.86;
+      }
+
+      if (scene && grid) {
+        scene.background = new THREE.Color(isLight ? 0xdde2ee : 0x07070e);
+        scene.remove(grid);
+        grid.geometry.dispose();
+        const lc = isLight ? 0x9ca3b8 : 0x1e1e2e;
+        const newGrid = new THREE.GridHelper(10, 10, lc, lc);
+        gridRef.current = newGrid;
+        scene.add(newGrid);
+      }
     }, [theme]);
+
+    // ── STL material (theme + material picker) ─────────────────────
+    useEffect(() => {
+      groupRef.current?.traverse((obj) => {
+        if (obj instanceof THREE.Mesh && obj.userData.isStlMetal) {
+          applyStlPbrTheme(obj, theme, materialKey);
+        }
+      });
+    }, [theme, materialKey]);
 
     // ── Render JSCAD code ────────────────────────────────────────────
     useEffect(() => {
@@ -371,7 +633,28 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
       setRenderError(null);
       setExploded(false);
 
-      if (!geomData?.code) return;
+      if (!geomData) return;
+
+      // CadQuery pipeline returns STL; render mesh directly (code is Python, not JSCAD)
+      if (geomData.stl && geomData.stl.length > 20) {
+        try {
+          const group = loadStlBase64(
+            geomData.stl,
+            themeRef.current,
+            materialKeyRef.current
+          );
+          group.rotation.z = 0.2;
+          group.scale.set(scale.x, scale.y, scale.z);
+          scene.add(group);
+          groupRef.current = group;
+        } catch (err) {
+          console.error('[Viewport3D] STL render failed:', err);
+          setRenderError((err as Error).message || 'STL load failed');
+        }
+        return;
+      }
+
+      if (!geomData.code?.trim()) return;
 
       try {
         const jscad = (window as unknown as { jscadModeling: unknown }).jscadModeling;
@@ -417,6 +700,7 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
         console.error('[Viewport3D] JSCAD render failed:', err);
         setRenderError((err as Error).message || 'Render failed');
       }
+      // Scale is applied in a separate effect so we don't re-execute JSCAD on slider moves
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [geomData]);
 
@@ -425,19 +709,10 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
       if (groupRef.current) groupRef.current.scale.set(scale.x, scale.y, scale.z);
     }, [scale.x, scale.y, scale.z]);
 
-    // ── Wireframe toggle ─────────────────────────────────────────────
-    const handleWireframe = () => {
-      setWireframe(w => {
-        const next = !w;
-        groupRef.current?.traverse(obj => {
-          if (obj instanceof THREE.Mesh) {
-            if (Array.isArray(obj.material)) obj.material.forEach(m => { m.wireframe = next; });
-            else (obj.material as THREE.Material & { wireframe?: boolean }).wireframe = next;
-          }
-        });
-        return next;
-      });
-    };
+    // ── Wireframe + opacity (also after theme recreates STL materials) ─
+    useEffect(() => {
+      if (groupRef.current) applyMeshDisplay(groupRef.current, wireframe, modelOpacity);
+    }, [wireframe, modelOpacity, theme, materialKey]);
 
     // ── Explode toggle (bearing only) ─────────────────────────────────
     const handleExplode = () => {
@@ -514,9 +789,6 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
           </button>
           <button onClick={handleExplode} style={{ ...btnStyle, color: '#f97316' }}>
             {exploded ? '🔧 Assemble' : '💥 Explode'}
-          </button>
-          <button onClick={handleWireframe} style={{ ...btnStyle, color: '#a78bf7' }}>
-            {wireframe ? '◼ Solid' : '⬡ Wireframe'}
           </button>
           <button onClick={handleReset} style={{ ...btnStyle, color: '#5ab85a' }}>
             ↺ Reset View
