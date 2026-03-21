@@ -1,15 +1,4 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MechaGen Frontend</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/Main.tsx"></script>
-  </body>
-</html>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -621,7 +610,7 @@
     <script>
         // --- Configuration & State ---
         const API_BASE = window.location.origin;
-        const BACKEND_URL = ''; // same-origin — works locally and in production
+        const BACKEND_URL = 'http://localhost:3001'; // backend API server
         let authToken = localStorage.getItem('auth_token');
         let currentUser = null;
         let currentProjectId = 'default-project';
@@ -787,25 +776,50 @@
             scene.background = new THREE.Color(0x07070e);
 
             camera = new THREE.PerspectiveCamera(45, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
-            camera.position.set(5, 5, 5);
+            camera.position.set(3, 3, 5);
             camera.lookAt(0, 0, 0);
 
             renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
             renderer.setSize(canvas.clientWidth, canvas.clientHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
+            renderer.outputEncoding = THREE.sRGBEncoding;
 
-            const ambientLight = new THREE.AmbientLight(0x334466, 2);
-            scene.add(ambientLight);
+            // ─── 5-LIGHT STUDIO SETUP ──────────────────────────
+            // 1. Ambient — fills shadows softly
+            const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambient);
 
-            const dirLight1 = new THREE.DirectionalLight(0x7eb8f7, 3);
-            dirLight1.position.set(5, 8, 5);
-            scene.add(dirLight1);
+            // 2. Key light — main white from top-right
+            const keyLight = new THREE.DirectionalLight(0xffffff, 2.8);
+            keyLight.position.set(4, 8, 5);
+            keyLight.castShadow = true;
+            keyLight.shadow.mapSize.width = 2048;
+            keyLight.shadow.mapSize.height = 2048;
+            keyLight.shadow.camera.near = 0.1;
+            keyLight.shadow.camera.far = 50;
+            keyLight.shadow.bias = -0.001;
+            scene.add(keyLight);
 
-            const dirLight2 = new THREE.DirectionalLight(0xf97316, 1);
-            dirLight2.position.set(-5, -3, -5);
-            scene.add(dirLight2);
+            // 3. Fill light — left, cool blue-white
+            const fillLight = new THREE.DirectionalLight(0xc8d8ff, 1.0);
+            fillLight.position.set(-5, 3, -2);
+            scene.add(fillLight);
 
-            grid = new THREE.GridHelper(10, 10, 0x1e1e2e, 0x1e1e2e);
+            // 4. Rim light — back-bottom, warm for edge highlights
+            const rimLight = new THREE.DirectionalLight(0xffe8cc, 0.7);
+            rimLight.position.set(0, -3, -5);
+            scene.add(rimLight);
+
+            // 5. Top light — straight down, catches horizontal surfaces
+            const topLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            topLight.position.set(0, 10, 0);
+            scene.add(topLight);
+
+            grid = new THREE.GridHelper(10, 20, 0x1a1a2e, 0x141420);
             scene.add(grid);
 
             axes = new THREE.AxesHelper(2);
@@ -875,6 +889,93 @@
             renderer.render(scene, camera);
         }
 
+        // ─── Procedural Bolt Builder ────────────────────────────────────
+        function buildBoltM8(group, geomData) {
+            // ─── Material factory ─────────────────────────────
+            const metalMat = (color, metalness = 0.95, roughness = 0.12) =>
+                new THREE.MeshStandardMaterial({
+                    color: new THREE.Color(color),
+                    metalness,
+                    roughness
+                });
+            const addMesh = (geo, mat, x = 0, y = 0, z = 0, ry = 0) => {
+                const m = new THREE.Mesh(geo, mat);
+                m.position.set(x, y, z);
+                m.rotation.y = ry;
+                m.castShadow = true;
+                m.receiveShadow = true;
+                group.add(m);
+                return m;
+            };
+
+            // ─── KNURLED HEAD (top) ─────────────────────────
+            const headR = 0.22, headH = 0.18;
+            const headY = 0.55;       // head at TOP (positive Y)
+
+            // Head body
+            addMesh(new THREE.CylinderGeometry(headR, headR, headH, 32),
+                    metalMat('#9aaaba', 0.92, 0.18), 0, headY);
+
+            // 28 knurl strips around head
+            const knurlCount = 28;
+            for (let i = 0; i < knurlCount; i++) {
+                const angle = (i / knurlCount) * Math.PI * 2;
+                const k = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.022, headH - 0.02, 0.034),
+                    metalMat('#7a8a9a', 0.90, 0.28)
+                );
+                k.position.set(Math.cos(angle) * headR, headY, Math.sin(angle) * headR);
+                k.rotation.y = angle;
+                k.castShadow = true;
+                group.add(k);
+            }
+
+            // Head top flat cap (chamfer effect)
+            addMesh(new THREE.CylinderGeometry(headR - 0.03, headR, 0.03, 32),
+                    metalMat('#b0c0d0', 0.95, 0.10), 0, headY + headH / 2 + 0.01);
+
+            // ─── WASHER ──────────────────────────────────────
+            addMesh(new THREE.CylinderGeometry(0.20, 0.20, 0.04, 32),
+                    metalMat('#aabaca', 0.90, 0.20), 0, headY - headH / 2 - 0.02);
+
+            // ─── SMOOTH SHAFT BASE ───────────────────────────
+            const baseY = headY - headH / 2 - 0.11;
+            addMesh(new THREE.CylinderGeometry(0.105, 0.105, 0.14, 32),
+                    metalMat('#c8d0d8', 0.93, 0.12), 0, baseY);
+
+            // ─── THREADS (stacked disks going DOWN) ─────────
+            const shaftR = 0.085;
+            const threadCount = 24;
+            const threadStartY = baseY - 0.09;
+            const threadSpacing = 0.052;
+
+            for (let i = 0; i < threadCount; i++) {
+                const ty = threadStartY - i * threadSpacing;
+                // Thread crest (wider — bright)
+                addMesh(new THREE.CylinderGeometry(shaftR + 0.018, shaftR + 0.010, 0.022, 32),
+                        metalMat('#d8e0e8', 0.95, 0.08), 0, ty);
+                // Thread valley (narrower — darker)
+                addMesh(new THREE.CylinderGeometry(shaftR, shaftR, 0.028, 32),
+                        metalMat('#8a9aaa', 0.90, 0.22), 0, ty - 0.025);
+            }
+
+            // ─── TIP (cone pointing DOWN) ────────────────────
+            const tipY = threadStartY - threadCount * threadSpacing;
+            addMesh(new THREE.CylinderGeometry(0, shaftR + 0.010, 0.08, 32),
+                    metalMat('#b0b8c0', 0.92, 0.15), 0, tipY - 0.04);
+
+            // ─── Lift group slightly above grid ─────────────
+            group.position.y = 0.1;
+            group.traverse(c => { if (c.isMesh) c.castShadow = true; });
+        }
+
+        function isBoltLike(name) {
+            if (!name) return false;
+            const n = name.toLowerCase();
+            return n.includes('bolt') || n.includes('screw') || n.includes('threaded') ||
+                   /m[468]/.test(n) || /m1[026]/.test(n);
+        }
+
         function buildMesh(geomData) {
             buildCompoundMesh(geomData);
         }
@@ -884,6 +985,15 @@
 
             const group = new THREE.Group();
             const parts = geomData.parts || [];
+
+            // ─── Route bolt/screw to high-quality procedural builder ───
+            if (isBoltLike(geomData.name)) {
+                buildBoltM8(group, geomData);
+                mesh = group;
+                scene.add(mesh);
+                updateCost();
+                return;
+            }
 
             parts.forEach(part => {
                 const p = part.params || {};
@@ -933,11 +1043,13 @@
             updateCost();
         }
 
-        // --- Real-time WebSocket ---
+        // --- Real-time WebSocket (graceful — no WS server needed) ---
         function initRealtime() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            socket = new WebSocket(protocol + '//' + location.host);
-            socket.onmessage = (e) => {
+            try {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                socket = new WebSocket(protocol + '//' + location.host);
+                socket.onerror = () => {};
+                socket.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
                 if (msg.type === 'generation:complete') {
                     buildMesh(msg.result.geomData);
@@ -970,7 +1082,8 @@
                         position: camera.position
                     }));
                 }
-            }, 100);
+                }, 100);
+            } catch (e) { /* no WS server in dev */ }
         }
 
         function addPresenceAvatar(id, name) {
@@ -1150,6 +1263,44 @@
             };
             recognition.start();
         });
+
+        // --- AI Co-Pilot Chat ---
+        function addChatMessage(text, role) {
+            const messages = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = 'card';
+            div.style.cssText = `font-size:0.85rem;background:${role==='user'?'var(--bg-primary)':'var(--bg-card)'};margin-bottom:0`;
+            div.innerHTML = `<span style="color:var(--text-muted);font-size:0.7rem">${role==='user'?'You':'AI'}</span><br>${text}`;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        async function sendChatMessage() {
+            const input = document.getElementById('chat-input');
+            const btn   = document.getElementById('btn-send-chat');
+            const message = input.value.trim();
+            if (!message) return;
+            addChatMessage(message, 'user');
+            input.value = '';
+            btn.disabled = true;
+            btn.innerText = '...';
+            try {
+                const res  = await fetch(BACKEND_URL + '/api/ai/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                const data = await res.json();
+                addChatMessage(data.reply || data.error || 'No response', 'ai');
+            } catch {
+                addChatMessage('Cannot reach AI — check backend is running', 'ai');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = 'Send';
+            }
+        }
+        document.getElementById('btn-send-chat').addEventListener('click', sendChatMessage);
+        document.getElementById('chat-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendChatMessage(); });
 
         // --- Utilities ---
         function showToast(message, type = 'info') {
