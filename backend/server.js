@@ -1,7 +1,9 @@
-const http = require("http");
-const https = require("https");
-const fs = require("fs");
-const path = require("path");
+const http          = require("http");
+const https         = require("https");
+const fs            = require("fs");
+const path          = require("path");
+const { exec }      = require("child_process");
+const { randomUUID } = require("crypto");
 
 const PORT    = process.env.PORT || 3001;
 const API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
@@ -231,7 +233,96 @@ ORIENTATION CRITICAL RULES:
 - FLANGES: disk in XZ plane
 - RAILS: long axis along Z
 - If user says "horizontal bolt" → rotate entire assembly 90deg on X axis (rotation x:1.5708)
-- If user says "wall bracket" → rotate base plate to vertical`;
+- If user says "wall bracket" → rotate base plate to vertical
+
+DETAIL DENSITY RULES — CRITICAL:
+NEVER generate less than 6 primitives for any part.
+ALWAYS decompose every feature into separate primitives.
+Think like a CAD engineer — every edge, chamfer, groove, hole = separate primitive.
+
+GEAR — MINIMUM 10 PRIMITIVES:
+  1. Main disk body       → cylinder  r:0.55 h:0.28  #8a9aaa
+  2. Top face chamfer     → cylinder  r:0.52 h:0.03  #9aaaba  y:+0.155
+  3. Bot face chamfer     → cylinder  r:0.52 h:0.03  #9aaaba  y:-0.155
+  4. Tooth ring outer     → torus     r:0.55 tube:0.055  #7a8a9a
+  5. Tooth ring detail    → torus     r:0.58 tube:0.025  #6a7a8a
+  6. Bore hole            → cylinder  r:0.12 h:0.30  #1a2030
+  7. Bore chamfer top     → cone      r:0.14→0.12 h:0.02  #2a3040  y:+0.15
+  8. Bore chamfer bottom  → cone      r:0.12→0.14 h:0.02  #2a3040  y:-0.15
+  9. Keyway slot          → box       w:0.06 h:0.30 d:0.09  #1a2030  x:+0.12
+  10. Hub ring            → torus     r:0.20 tube:0.025  #9aaaba
+
+BOLT M8 — MINIMUM 8 PRIMITIVES:
+  1. Hex head             → box       w:0.24 h:0.15 d:0.24  rot y:0.5236  #8a9aaa
+  2. Head top face        → cylinder  r:0.13 h:0.02  #b0c0d0  y:head_top
+  3. Head chamfer         → cone  #9aaaba
+  4. Washer               → cylinder  r:0.18 h:0.04  #9aaaba
+  5. Smooth shaft         → cylinder  r:0.08 h:0.20  #b0c0d0
+  6. Threaded shaft       → cylinder  r:0.08 h:0.65  label:"thread"  #8a9aaa
+  7. Thread tip chamfer   → cone  r:0.08→0.04 h:0.06  #7a8a9a
+  8. Tip point            → sphere  r:0.035  #6a7a8a
+
+BEARING — MINIMUM 10 PRIMITIVES:
+  1. Outer ring           → cylinder  r:0.52 h:0.26  #1a1a22
+  2. Outer inner wall     → cylinder  r:0.42 h:0.28  #2a2a35
+  3. Outer raceway grv    → torus     r:0.42 tube:0.032  #c8d0d8
+  4. Inner ring           → cylinder  r:0.28 h:0.28  #1a1a22
+  5. Inner outer wall     → cylinder  r:0.32 h:0.26  #2a2a35
+  6. Inner raceway grv    → torus     r:0.32 tube:0.028  #c8d0d8
+  7. Bore                 → cylinder  r:0.18 h:0.30  #0a0a12
+  8. Ball 1 at 0°         → sphere    r:0.065  #d0d8e8  x:+0.37
+  9. Ball 2 at 120°       → sphere    r:0.065  #d0d8e8  calculated
+  10. Ball 3 at 240°      → sphere    r:0.065  #d0d8e8  calculated
+  11. Cage ring top       → torus     r:0.37 tube:0.016  #4a5a3a  y:+0.06
+  12. Cage ring bottom    → torus     r:0.37 tube:0.016  #4a5a3a  y:-0.06
+
+BRACKET — MINIMUM 8 PRIMITIVES:
+  1. Base plate           → box  w:0.90 h:0.08 d:0.65  #8a9aaa
+  2. Vertical plate       → box  w:0.08 h:0.75 d:0.65  #8a9aaa
+  3. Gusset triangle      → box  w:0.22 h:0.22 d:0.62  rot z:0.785  #7a8a9a
+  4. Base bolt hole A     → cylinder  r:0.04 h:0.10  #1a2030  corner A
+  5. Base bolt hole B     → cylinder  r:0.04 h:0.10  #1a2030  corner B
+  6. Vert bolt hole A     → cylinder  r:0.04 h:0.10  #1a2030  rot x:1.5708
+  7. Vert bolt hole B     → cylinder  r:0.04 h:0.10  #1a2030  rot x:1.5708
+  8. Top edge chamfer     → box  w:0.09 h:0.06 d:0.65  rot z:0.785  #9aaaba
+
+ARM JOINT — MINIMUM 9 PRIMITIVES:
+  1. Upper link shaft     → cylinder  r:0.12 h:0.65  #8a9aaa  y:+0.52
+  2. Upper end cap        → cylinder  r:0.13 h:0.03  #9aaaba  y:+0.855
+  3. Joint body           → cylinder  r:0.28 h:0.22  #b0c0d0
+  4. Flange top           → cylinder  r:0.34 h:0.055  #9aaaba  y:+0.138
+  5. Flange bottom        → cylinder  r:0.34 h:0.055  #9aaaba  y:-0.138
+  6. Bolt through flange  → cylinder  r:0.035 h:0.30  #1a2030  x:+0.26
+  7. Lower link shaft     → cylinder  r:0.12 h:0.65  #8a9aaa  y:-0.52
+  8. Lower end cap        → cylinder  r:0.13 h:0.03  #9aaaba  y:-0.855
+  9. Joint center bore    → cylinder  r:0.08 h:0.24  #1a2030
+
+MOUNT PLATE — MINIMUM 9 PRIMITIVES:
+  1. Base plate           → box  w:1.30 h:0.09 d:1.00  #8a9aaa
+  2. Center boss          → cylinder  r:0.18 h:0.14  #9aaaba  y:+0.115
+  3. Center bore          → cylinder  r:0.10 h:0.16  #1a2030  y:+0.115
+  4. Stiffener rib X      → box  w:1.28 h:0.16 d:0.07  #7a8a9a  y:+0.125
+  5. Stiffener rib Z      → box  w:0.07 h:0.16 d:0.98  #7a8a9a  y:+0.125
+  6. Hole front-left      → cylinder  r:0.055 h:0.11  #1a2030  x:-0.50 z:-0.38
+  7. Hole front-right     → cylinder  r:0.055 h:0.11  #1a2030  x:+0.50 z:-0.38
+  8. Hole back-left       → cylinder  r:0.055 h:0.11  #1a2030  x:-0.50 z:+0.38
+  9. Hole back-right      → cylinder  r:0.055 h:0.11  #1a2030  x:+0.50 z:+0.38
+  10. Edge chamfer        → box  w:1.32 h:0.03 d:0.03  #9aaaba  y:+0.06 z:+0.515
+
+GENERAL DETAIL RULES FOR ANY PART:
+FOR EVERY CYLINDRICAL FEATURE → add top chamfer + bottom chamfer + face ring
+FOR EVERY HOLE/BORE → entry chamfer cone at both ends, color #1a2030, h+0.02 to punch through
+FOR EVERY FLAT PLATE/BOX → edge highlight (h:0.008 lighter), stiffener rib, min 4 bolt holes
+FOR EVERY SHAFT → shoulder steps at both ends + keyway slot + thread end label
+FOR EVERY JOINT → flange (wider flat cylinder) at both ends + bolt holes + fillet torus at base
+
+COLOR DEPTH RULES — USE 3 SHADES:
+  LIGHT: main visible faces    → #b0c0d0
+  MID:   body/side faces       → #8a9aaa
+  DARK:  recesses/undercuts    → #5a6a7a
+  BLACK: holes/bores           → #1a2030
+Alternate light/mid/dark every 2-3 parts to show form. Never same color 3+ parts in a row.`;
+
 
 
 
@@ -276,21 +367,25 @@ function send(res, status, obj) {
 }
 
 function extractJSON(raw) {
-  let clean = raw
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/```\s*$/i, "")
-    .trim();
-  if (!clean) {
-    const m = raw.match(/<think>([\s\S]*?)<\/think>/i);
-    if (m) { const j = m[1].match(/\{[\s\S]*\}/); if (j) clean = j[0]; }
+  // 1. Strip think-tags
+  let text = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  // 2. Strip ALL markdown fences (```json, ```scad, ```, etc.)
+  text = text.replace(/^```[a-z]*\s*/im, "").replace(/```\s*$/im, "").trim();
+  // 3. Find the outermost { ... } using balanced brace scanning
+  let start = text.indexOf("{");
+  if (start === -1) return "";
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (esc)            { esc = false; continue; }
+    if (c === "\\")     { esc = true;  continue; }
+    if (c === '"')      { inStr = !inStr; continue; }
+    if (inStr)          { continue; }
+    if (c === "{")      { depth++; }
+    else if (c === "}") { depth--; if (depth === 0) return text.slice(start, i + 1); }
   }
-  if (!clean) {
-    const j = raw.match(/\{[\s\S]*\}/);
-    if (j) clean = j[0];
-  }
-  return clean;
+  // 4. Fallback: return everything from first { 
+  return text.slice(start);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -347,6 +442,107 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && req.url === "/api/ai/recommend-material") {
     return send(res, 200, { material: "steel" });
+  }
+
+  // ── OpenSCAD pipeline: generate .scad → STL ────────────────
+  if (req.method === "POST" && (req.url === "/api/ai/generate-scad" || req.url === "/api/ai/render-scad")) {
+    const b = await readBody(req).catch(() => "{}");
+    const body = JSON.parse(b);
+    const apiKey = process.env.NVIDIA_API_KEY;
+    const jobId  = randomUUID();
+    const tmpDir = require("os").tmpdir();
+    const scadPath = path.join(tmpDir, `mechagen_${jobId}.scad`);
+    const stlPath  = path.join(tmpDir, `mechagen_${jobId}.stl`);
+
+    // Check OpenSCAD is available
+    const openscadBin = await new Promise(r => {
+      // Try which first, then check common macOS paths (Homebrew PATH may not be in exec env)
+      exec("which openscad", (e, o) => {
+        if (!e && o.trim()) return r(o.trim());
+        const candidates = [
+          "/opt/homebrew/bin/openscad",              // Apple Silicon brew
+          "/usr/local/bin/openscad",                  // Intel Mac brew
+          "/Applications/OpenSCAD-2021.01.app/Contents/MacOS/OpenSCAD",
+          "/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"
+        ];
+        const fs2 = require("fs");
+        const found = candidates.find(p => { try { return fs2.existsSync(p); } catch { return false; } });
+        r(found || null);
+      });
+    });
+    if (!openscadBin) return send(res, 501, { error: "OpenSCAD is not installed on this server. Install it with: brew install --cask openscad (Mac) or apt-get install openscad (Linux)" });
+
+    let scadCode;
+    try {
+      if (req.url === "/api/ai/render-scad") {
+        // User sent raw SCAD code to re-render
+        scadCode = body.scad_code;
+        if (!scadCode) return send(res, 400, { error: "scad_code is required" });
+      } else {
+        // AI generates OpenSCAD code
+        if (!apiKey) return send(res, 500, { error: "NVIDIA_API_KEY not configured" });
+        const prompt = body.prompt || "";
+        if (!prompt.trim()) return send(res, 400, { error: "prompt is required" });
+
+        const OPENSCAD_SYS = `You are an expert OpenSCAD programmer for mechanical engineering.
+Output ONLY valid OpenSCAD code — no markdown, no explanation, no triple backticks.
+Rules:
+1. $fn=64 for smooth cylinders, $fn=6 for hex shapes
+2. All parametric variables at top as named constants
+3. Use difference() for holes/bores, union() for compound bodies
+4. Center model at origin [0,0,0]
+5. All dimensions in millimeters
+6. Threads via for() loop with translate+rotate_extrude
+7. Gears via for() loop rotating copies of tooth profile
+8. Chamfers via difference() with angled cube or cylinder
+9. Fillets via minkowski() with small sphere
+10. Hex heads: cylinder(h, d/2, $fn=6)
+Always end file with the top-level shape call.`;
+
+        const result = await apiFetch({
+          model: MODEL, temperature: 0.3, max_tokens: 2048,
+          messages: [
+            { role: "system", content: OPENSCAD_SYS },
+            { role: "user",   content: `Generate OpenSCAD code for: ${prompt.trim()}` }
+          ]
+        }, apiKey);
+
+        const data = JSON.parse(result.body);
+        scadCode = (data.choices?.[0]?.message?.content || "").trim();
+        scadCode = scadCode.replace(/^```(?:openscad|scad)?\s*/i, "").replace(/```\s*$/i, "").trim();
+        if (!scadCode) throw new Error("Model returned empty OpenSCAD code");
+      }
+
+      // Write .scad file
+      fs.writeFileSync(scadPath, scadCode);
+      console.log(`[SCAD] Written ${scadPath}`);
+
+      // Run OpenSCAD headless
+      await new Promise((resolve, reject) => {
+        const cmd = `"${openscadBin}" --export-format=binstl -o "${stlPath}" "${scadPath}"`;
+        exec(cmd, { timeout: 30000 }, (err, _stdout, stderr) => {
+          if (err) reject(new Error("OpenSCAD error: " + (stderr || err.message)));
+          else resolve();
+        });
+      });
+
+      // Read STL and base64 encode
+      const stlBuffer = fs.readFileSync(stlPath);
+      const stlBase64 = stlBuffer.toString("base64");
+      const stlSizeKB = Math.round(stlBuffer.length / 1024);
+      console.log(`[SCAD] STL OK — ${stlSizeKB}KB`);
+
+      // Cleanup
+      if (fs.existsSync(scadPath)) fs.unlinkSync(scadPath);
+      if (fs.existsSync(stlPath))  fs.unlinkSync(stlPath);
+
+      return send(res, 200, { success: true, stl_base64: stlBase64, scad_code: scadCode, size_kb: stlSizeKB });
+
+    } catch (err) {
+      if (fs.existsSync(scadPath)) try { fs.unlinkSync(scadPath); } catch {}
+      if (fs.existsSync(stlPath))  try { fs.unlinkSync(stlPath);  } catch {}
+      return send(res, 500, { error: err.message || "OpenSCAD generation failed" });
+    }
   }
 
   // /api/ai/generate → forward to /api/generate

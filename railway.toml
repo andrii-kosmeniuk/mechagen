@@ -1,5 +1,6 @@
 [build]
 builder = "NIXPACKS"
+buildCommand = "apt-get install -y openscad 2>/dev/null || true"
 
 [deploy]
 startCommand = "node backend/server.js"

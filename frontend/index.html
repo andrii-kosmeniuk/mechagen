@@ -12,6 +12,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/STLExporter.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/OBJExporter.js"></script>
     <style>
         :root {
             --bg-primary: #0a0a0f;
@@ -476,10 +478,29 @@
 
                         <div class="mt-4 flex-between gap-2">
                             <button class="btn-primary w-full" id="btn-generate">
-                                <span class="btn-text">Generate</span>
+                                <span class="btn-text">✦ Generate</span>
                                 <span class="spinner"></span>
                             </button>
+                            <button class="chip" id="btn-scad-toggle" title="Toggle OpenSCAD mode" style="white-space:nowrap;">
+                                ⬡ SCAD
+                            </button>
                             <button class="chip" id="btn-variants">Variants</button>
+                        </div>
+
+                        <!-- SCAD Code Viewer (hidden by default) -->
+                        <div id="scad-viewer" style="display:none;margin-top:1rem;">
+                            <div class="flex-between" style="margin-bottom:0.5rem;">
+                                <span style="font-size:0.8rem;font-weight:600;color:var(--accent-blue)">⬡ OpenSCAD Code</span>
+                                <div class="flex-between gap-2">
+                                    <button class="chip" id="btn-rerender-scad" style="font-size:0.7rem;">↻ Re-render</button>
+                                    <button class="chip" id="btn-copy-scad" style="font-size:0.7rem;">⎘ Copy</button>
+                                </div>
+                            </div>
+                            <textarea id="scad-code-area" rows="8" spellcheck="false" style="
+                                width:100%;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;
+                                background:#07070e;color:#c8d0d8;border:1px solid var(--border);
+                                border-radius:8px;padding:10px;resize:vertical;line-height:1.5;
+                            "></textarea>
                         </div>
 
                         <div class="mt-4 card">
@@ -976,23 +997,121 @@
                    /m[468]/.test(n) || /m1[026]/.test(n);
         }
 
+        function isBearingLike(name) {
+            if (!name) return false;
+            const n = name.toLowerCase();
+            return n.includes('bearing') || n.includes('ball bearing') || n.includes('6205') ||
+                   n.includes('6200') || n.includes('6001') || n.includes('6002');
+        }
+
+        function buildBearing6205(group) {
+            const metalMat = (color, metalness = 0.95, roughness = 0.12) =>
+                new THREE.MeshStandardMaterial({ color: new THREE.Color(color), metalness, roughness });
+
+            // ─── OUTER RING ──────────────────────────────────
+            const outer = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.55, 0.55, 0.28, 64),
+                metalMat('#1a1a22', 0.95, 0.10));
+            outer.castShadow = true;
+            group.add(outer);
+
+            // Outer ring inner wall (raceway surface)
+            group.add(Object.assign(
+                new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.44, 0.30, 64), metalMat('#2a2a35', 0.92, 0.08)),
+                { castShadow: true }
+            ));
+
+            // Outer ring groove (ball raceway channel)
+            const outerGroove = new THREE.Mesh(
+                new THREE.TorusGeometry(0.44, 0.035, 16, 64),
+                metalMat('#c8d0d8', 0.98, 0.05));
+            outerGroove.rotation.x = Math.PI / 2;
+            group.add(outerGroove);
+
+            // ─── INNER RING ──────────────────────────────────
+            group.add(Object.assign(
+                new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.30, 64), metalMat('#1a1a22', 0.95, 0.10)),
+                { castShadow: true }
+            ));
+            group.add(new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 0.28, 64), metalMat('#2a2a35', 0.92, 0.08)));
+
+            const innerGroove = new THREE.Mesh(
+                new THREE.TorusGeometry(0.30, 0.030, 16, 64),
+                metalMat('#c8d0d8', 0.98, 0.05));
+            innerGroove.rotation.x = Math.PI / 2;
+            group.add(innerGroove);
+
+            // ─── BORE ──────────────────────────────────────
+            group.add(new THREE.Mesh(new THREE.CylinderGeometry(0.185, 0.185, 0.32, 64), metalMat('#0a0a12', 0.80, 0.40)));
+            const bct = new THREE.Mesh(new THREE.CylinderGeometry(0.185, 0.215, 0.025, 32), metalMat('#303040', 0.88, 0.15));
+            bct.position.y = 0.162; group.add(bct);
+            const bcb = new THREE.Mesh(new THREE.CylinderGeometry(0.215, 0.185, 0.025, 32), metalMat('#303040', 0.88, 0.15));
+            bcb.position.y = -0.162; group.add(bcb);
+
+            // ─── BALLS ───────────────────────────────────────
+            const ballCount = 8, ballRadius = 0.37, ballSize = 0.068;
+            const ballMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#d0d8e8'), metalness: 1.0, roughness: 0.02 });
+            for (let i = 0; i < ballCount; i++) {
+                const angle = (i / ballCount) * Math.PI * 2;
+                const ball = new THREE.Mesh(new THREE.SphereGeometry(ballSize, 32, 32), ballMat);
+                ball.position.set(Math.cos(angle) * ballRadius, 0, Math.sin(angle) * ballRadius);
+                ball.castShadow = true;
+                group.add(ball);
+            }
+
+            // ─── CAGE (retainer) ─────────────────────────────
+            const cageMat = metalMat('#4a5a3a', 0.60, 0.55);
+            const makeRing = (y) => {
+                const t = new THREE.Mesh(new THREE.TorusGeometry(0.37, 0.018, 8, 64), cageMat);
+                t.rotation.x = Math.PI / 2; t.position.y = y; group.add(t);
+            };
+            makeRing(0.06); makeRing(-0.06);
+            for (let i = 0; i < ballCount; i++) {
+                const angle = (i / ballCount) * Math.PI * 2 + Math.PI / ballCount;
+                const p = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.14, 0.04), metalMat('#3a4a2a', 0.55, 0.60));
+                p.position.set(Math.cos(angle) * ballRadius, 0, Math.sin(angle) * ballRadius);
+                p.rotation.y = -angle; group.add(p);
+            }
+
+            // ─── FACE RINGS (top + bottom) ────────────────────
+            const faceMat = new THREE.MeshStandardMaterial({ color: '#222230', metalness: 0.95, roughness: 0.08, side: THREE.DoubleSide });
+            const innerFaceMat = new THREE.MeshStandardMaterial({ color: '#1a1a28', metalness: 0.95, roughness: 0.08, side: THREE.DoubleSide });
+            [[0.141, -Math.PI/2, faceMat, 0.44, 0.55], [-0.141, Math.PI/2, faceMat, 0.44, 0.55],
+             [0.148, -Math.PI/2, innerFaceMat, 0.185, 0.30], [-0.148, Math.PI/2, innerFaceMat, 0.185, 0.30]]
+            .forEach(([y, rx, mat, ri, ro]) => {
+                const f = new THREE.Mesh(new THREE.RingGeometry(ri, ro, 64), mat);
+                f.rotation.x = rx; f.position.y = y; group.add(f);
+            });
+
+            group.traverse(c => { if (c.isMesh) c.castShadow = true; });
+            group.position.y = 0.15;
+        }
+
         function buildMesh(geomData) {
             buildCompoundMesh(geomData);
         }
 
         function buildCompoundMesh(geomData) {
-            if (mesh) scene.remove(mesh);
+            if (mesh) {
+                scene.remove(mesh);
+                mesh.traverse(c => {
+                    if (c.geometry) c.geometry.dispose();
+                    if (c.material) c.material.dispose();
+                });
+            }
 
             const group = new THREE.Group();
             const parts = geomData.parts || [];
+            const name = (geomData.name || '').toLowerCase();
 
-            // ─── Route bolt/screw to high-quality procedural builder ───
-            if (isBoltLike(geomData.name)) {
+            // ─── Route to procedural builders ──────────────
+            if (isBoltLike(name)) {
                 buildBoltM8(group, geomData);
-                mesh = group;
-                scene.add(mesh);
-                updateCost();
-                return;
+                mesh = group; scene.add(mesh); updateCost(); return;
+            }
+            if (isBearingLike(name)) {
+                buildBearing6205(group);
+                mesh = group; scene.add(mesh); updateCost(); return;
             }
 
             parts.forEach(part => {
@@ -1039,6 +1158,110 @@
             }
 
             mesh = group;
+            scene.add(mesh);
+            updateCost();
+        }
+
+        // ─── OpenSCAD / STL pipeline ─────────────────────────────────────
+        let scadMode = false;
+        let currentScadCode = null;
+
+        // Toggle SCAD mode
+        document.getElementById('btn-scad-toggle').addEventListener('click', () => {
+            scadMode = !scadMode;
+            const btn = document.getElementById('btn-scad-toggle');
+            btn.style.background  = scadMode ? 'var(--accent-blue)' : '';
+            btn.style.color       = scadMode ? '#000' : '';
+            btn.title             = scadMode ? 'OpenSCAD mode ON — AI generates .scad → STL' : 'Toggle OpenSCAD mode';
+            document.getElementById('scad-viewer').style.display = scadMode && currentScadCode ? 'block' : 'none';
+            showToast(scadMode ? '⬡ OpenSCAD mode ON' : '⬡ OpenSCAD mode OFF');
+        });
+
+        document.getElementById('btn-copy-scad').addEventListener('click', () => {
+            const code = document.getElementById('scad-code-area').value;
+            navigator.clipboard.writeText(code).then(() => showToast('SCAD code copied!'));
+        });
+
+        document.getElementById('btn-rerender-scad').addEventListener('click', async () => {
+            const code = document.getElementById('scad-code-area').value.trim();
+            if (!code) return;
+            const btn = document.getElementById('btn-generate');
+            btn.classList.add('loading');
+            try {
+                const res = await fetch(BACKEND_URL + '/api/ai/render-scad', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scad_code: code })
+                });
+                const data = await res.json();
+                if (data.success) { renderFromSTL(data.stl_base64); showToast('✓ Re-rendered'); }
+                else showToast('Render error: ' + data.error, 'error');
+            } catch (e) { showToast('Backend error', 'error'); }
+            finally { btn.classList.remove('loading'); }
+        });
+
+        // Binary STL parser (no external loader needed)
+        function parseBinarySTL(buffer) {
+            const view   = new DataView(buffer);
+            const nTris  = view.getUint32(80, true);
+            const positions = new Float32Array(nTris * 9);
+            const normals   = new Float32Array(nTris * 9);
+            let offset = 84, pi = 0, ni = 0;
+            for (let i = 0; i < nTris; i++) {
+                const nx = view.getFloat32(offset,      true);
+                const ny = view.getFloat32(offset +  4, true);
+                const nz = view.getFloat32(offset +  8, true);
+                offset += 12;
+                for (let v = 0; v < 3; v++) {
+                    positions[pi++] = view.getFloat32(offset,     true);
+                    positions[pi++] = view.getFloat32(offset + 4, true);
+                    positions[pi++] = view.getFloat32(offset + 8, true);
+                    normals[ni++] = nx; normals[ni++] = ny; normals[ni++] = nz;
+                    offset += 12;
+                }
+                offset += 2; // attribute byte count
+            }
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geo.setAttribute('normal',   new THREE.BufferAttribute(normals,   3));
+            return geo;
+        }
+
+        function renderFromSTL(stlBase64) {
+            // Decode base64 → ArrayBuffer
+            const bin = atob(stlBase64);
+            const buf = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+
+            let geo;
+            try { geo = parseBinarySTL(buf.buffer); }
+            catch (e) { showToast('STL parse error: ' + e.message, 'error'); return; }
+
+            // Center + scale to fit -2 to 2 units
+            geo.computeBoundingBox();
+            const center = new THREE.Vector3();
+            geo.boundingBox.getCenter(center);
+            geo.translate(-center.x, -center.y, -center.z);
+            geo.computeBoundingBox();
+            const size = new THREE.Vector3();
+            geo.boundingBox.getSize(size);
+            const maxDim = Math.max(size.x, size.y, size.z) || 1;
+            const scale = 3.2 / maxDim;
+            geo.scale(scale, scale, scale);
+
+            // Dispose old mesh
+            if (mesh) {
+                scene.remove(mesh);
+                if (mesh.geometry) mesh.geometry.dispose();
+                if (mesh.material) mesh.material.dispose();
+            }
+
+            const mat = new THREE.MeshStandardMaterial({
+                color: new THREE.Color('#8a9aaa'),
+                metalness: 0.90, roughness: 0.18
+            });
+            mesh = new THREE.Mesh(geo, mat);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
             scene.add(mesh);
             updateCost();
         }
@@ -1105,16 +1328,51 @@
 
         // --- Features ---
         document.getElementById('btn-generate').addEventListener('click', async () => {
-            const btn = document.getElementById('btn-generate');
+            const btn    = document.getElementById('btn-generate');
             const prompt = document.getElementById('prompt-input').value.trim();
 
             if (!prompt) { showToast('Enter a prompt first', 'error'); return; }
 
             btn.classList.add('loading');
-            document.getElementById('part-status').innerText = 'Generating...';
+            document.getElementById('part-status').innerText = scadMode ? 'Generating SCAD…' : 'Generating...';
             document.getElementById('part-status').style.background = 'var(--warning)';
 
             try {
+                // ─── OpenSCAD mode ────────────────────────────
+                if (scadMode) {
+                    const res = await fetch(BACKEND_URL + '/api/ai/generate-scad', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompt })
+                    });
+                    const data = await res.json();
+
+                    if (res.status === 501) {
+                        // OpenSCAD not installed — tell user
+                        showToast('OpenSCAD not installed on server. Run: brew install --cask openscad', 'error');
+                        document.getElementById('part-status').innerText = 'OpenSCAD missing';
+                        document.getElementById('part-status').style.background = 'var(--error)';
+                        return;
+                    }
+                    if (!data.success) {
+                        showToast('SCAD error: ' + (data.error || 'Unknown error'), 'error');
+                        document.getElementById('part-status').innerText = 'Error';
+                        document.getElementById('part-status').style.background = 'var(--error)';
+                        return;
+                    }
+
+                    currentScadCode = data.scad_code;
+                    document.getElementById('scad-code-area').value = currentScadCode;
+                    document.getElementById('scad-viewer').style.display = 'block';
+
+                    renderFromSTL(data.stl_base64);
+                    addHistory('[SCAD] ' + prompt, null);
+                    showToast(`✓ OpenSCAD model — ${data.size_kb}KB STL`);
+                    document.getElementById('part-status').innerText = 'Draft';
+                    document.getElementById('part-status').style.background = '';
+                    return;
+                }
+
+                // ─── Normal JSON primitive mode ───────────────
                 const res = await fetch(BACKEND_URL + '/api/generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1131,10 +1389,8 @@
 
                 buildCompoundMesh(data);
                 currentPartId = 'part-' + Date.now();
-
                 document.getElementById('part-status').innerText = 'Draft';
                 document.getElementById('part-status').style.background = '';
-
                 addHistory(data.name || prompt, data);
                 showToast('✓ ' + (data.name || 'Part') + ' generated');
 
@@ -1324,6 +1580,64 @@
                 camera.updateProjectionMatrix();
                 renderer.setSize(canvas.clientWidth, canvas.clientHeight);
             }
+        });
+
+        // --- Exporters ---
+        function downloadBlob(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        document.getElementById('btn-export-stl').addEventListener('click', () => {
+            if (!mesh || !THREE.STLExporter) {
+                showToast('No model to export or exporter script failed to load', 'error');
+                return;
+            }
+            try {
+                const exporter = new THREE.STLExporter();
+                const stlString = exporter.parse(scene); 
+                const blob = new Blob([stlString], { type: 'text/plain' });
+                downloadBlob(blob, 'mechagen_part.stl');
+                showToast('STL Downloaded');
+            } catch (err) {
+                showToast('Failed to export STL', 'error');
+            }
+        });
+
+        document.getElementById('btn-export-obj').addEventListener('click', () => {
+            if (!mesh || !THREE.OBJExporter) {
+                showToast('No model to export or exporter script failed to load', 'error');
+                return;
+            }
+            try {
+                const exporter = new THREE.OBJExporter();
+                const objString = exporter.parse(scene);
+                const blob = new Blob([objString], { type: 'text/plain' });
+                downloadBlob(blob, 'mechagen_part.obj');
+                showToast('OBJ Downloaded');
+            } catch (err) {
+                showToast('Failed to export OBJ', 'error');
+            }
+        });
+
+        document.getElementById('btn-screenshot').addEventListener('click', () => {
+            const canvas = document.getElementById('three-canvas');
+            if (!canvas) return;
+            // Render one frame to ensure buffer isn't empty
+            renderer.render(scene, camera);
+            const dataUrl = canvas.toDataURL('image/png');
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = 'mechagen_shot.png';
+            a.click();
+            showToast('Screenshot saved');
         });
     </script>
 </body>
