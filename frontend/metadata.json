@@ -1,0 +1,7 @@
+{
+  "name": "MechaGen Pro",
+  "description": "AI-powered 3D mechanical parts generator with real-time collaboration and engineering analysis.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
