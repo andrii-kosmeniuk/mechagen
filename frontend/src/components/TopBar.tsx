@@ -9,57 +9,104 @@ type Props = {
 
 export function TopBar({ user, onSignOut }: Props) {
   const { theme, toggleTheme } = useTheme();
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
+  const topbarRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    function close() {
-      setOpen(false);
+    function onDocClick(e: MouseEvent) {
+      const t = e.target as Node;
+      if (topbarRef.current && !topbarRef.current.contains(t)) {
+        setUserMenuOpen(false);
+        setNavOpen(false);
+      }
     }
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setUserMenuOpen(false);
+        setNavOpen(false);
+      }
+    }
+    document.addEventListener('click', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('click', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, []);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 901px)');
+    const closeNavIfDesktop = () => {
+      if (mq.matches) setNavOpen(false);
+    };
+    mq.addEventListener('change', closeNavIfDesktop);
+    return () => mq.removeEventListener('change', closeNavIfDesktop);
   }, []);
 
   const initial = user.name?.[0]?.toUpperCase() || 'U';
 
   return (
-    <header className="topbar">
+    <header className="topbar" ref={topbarRef}>
       <div className="logo">
-        <span style={{ color: 'var(--accent-blue)' }}>⬡</span> MECHAGEN PRO
+        <span style={{ color: 'var(--accent-blue)' }}>⬡</span>
+        <span className="logo-text">MECHAGEN PRO</span>
       </div>
-      <div className="topbar-actions">
-        <button type="button" className="chip">
-          📊 Dashboard
-        </button>
-        <button type="button" className="chip">
-          🧠 Memory
-        </button>
-        <button type="button" className="chip">
-          📋 Versions
-        </button>
+
+      <div className="topbar-end">
         <button
           type="button"
-          className="chip"
+          className="topbar-burger chip"
+          aria-expanded={navOpen}
+          aria-controls="topbar-nav"
+          aria-label={navOpen ? 'Close menu' : 'Open menu'}
           onClick={(e) => {
             e.stopPropagation();
-            toggleTheme();
+            setNavOpen((o) => !o);
+            setUserMenuOpen(false);
           }}
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >
-          {theme === 'dark' ? '🌙 Light' : '☀️ Dark'}
+          {navOpen ? '✕' : '☰'}
         </button>
+
+        <nav
+          id="topbar-nav"
+          className={`topbar-nav${navOpen ? ' topbar-nav--open' : ''}`}
+        >
+          <button type="button" className="chip" onClick={() => setNavOpen(false)}>
+            📊 Dashboard
+          </button>
+          <button type="button" className="chip" onClick={() => setNavOpen(false)}>
+            🧠 Memory
+          </button>
+          <button type="button" className="chip" onClick={() => setNavOpen(false)}>
+            📋 Versions
+          </button>
+          <button
+            type="button"
+            className="chip"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleTheme();
+            }}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {theme === 'dark' ? '🌙 Light' : '☀️ Dark'}
+          </button>
+        </nav>
+
         <div
-          ref={wrapRef}
           className="user-avatar-wrap"
           onClick={(e) => {
             e.stopPropagation();
-            setOpen((o) => !o);
+            setUserMenuOpen((o) => !o);
+            setNavOpen(false);
           }}
         >
           <span className="user-avatar-initial">{initial}</span>
           <div
             className="user-dropdown"
-            style={{ display: open ? 'block' : 'none' }}
+            style={{ display: userMenuOpen ? 'block' : 'none' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="user-info-block">
