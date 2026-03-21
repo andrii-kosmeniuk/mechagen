@@ -24,15 +24,112 @@ def _patch_cq_union_cut_chain() -> None:
     _orig_union = Wp.union
     _orig_cut = Wp.cut
 
-    def _has_solid(obj) -> bool:
-        """True if obj is a Workplane that contains at least one real solid."""
+    def _local_solids_count(wp) -> int:
+        """Solids on *this* workplane stack only (not parent chain)."""
+        try:
+            return len(list(wp.solids()))
+        except Exception:
+            return 0
+
+    def _solid_from(obj):
+        """Best-effort solid extractor from Workplane/Shape-like values."""
         if obj is None:
+            return None
+        try:
+            from cadquery.occ_impl.shapes import Shape
+
+            if isinstance(obj, Shape):
+                return obj
+        except Exception:
+            pass
+        try:
+            return obj.findSolid()
+        except Exception:
+            return None
+
+    def _wp_from_solid(solid):
+        """Create a workplane with `solid` on the local stack."""
+        try:
+            return cq.Workplane("XY").newObject([solid])
+        except Exception:
+            return cq.Workplane().add(solid)
+
+    def _wp_needs_adopt_other_only(wp) -> bool:
+        """
+        True when there is nothing on the local stack to union from (empty / wire-only)
+        and no parent solid to re-stack — then we adopt `other` as the new base.
+        If findSolid() succeeds (e.g. after .faces().workplane()), _union_one re-wraps
+        that solid onto a fresh Workplane so native union can run.
+        """
+        if _local_solids_count(wp) > 0:
+            return False
+        return _solid_from(wp) is None
+
+    def _other_has_fusible_geometry(other) -> bool:
+        if other is None:
             return False
         try:
-            obj.findSolid()
-            return True
+            if _local_solids_count(other) > 0:
+                return True
         except Exception:
-            return False
+            pass
+        return _solid_from(other) is not None
+
+    def _null_shape_retryable(exc: BaseException) -> bool:
+        s = str(exc).lower()
+        return "null" in s and "topo" in s
+
+    def _union_one(self, other, kwargs):
+        """
+        Single .union(other). OCCT often returns Null TopoDS_Shape on gear teeth
+        (coincident faces, many chained fuses). Retry with glue + tolerance.
+        """
+        # CadQuery's union() requires a solid on *this* workplane's stack. After
+        # .faces(...).workplane(), solids() is often empty while findSolid() still
+        # resolves the parent solid — native union then raises. Re-stack the solid.
+        base_wp = self
+        base_solid = _solid_from(self)
+        if _local_solids_count(self) == 0 and base_solid is not None:
+            base_wp = _wp_from_solid(base_solid)
+
+        base_kw = dict(kwargs)
+        attempts = [
+            base_kw,
+            {**base_kw, "glue": True, "tol": base_kw.get("tol") or 1e-3},
+            {**base_kw, "glue": True, "tol": max(base_kw.get("tol") or 1e-3, 5e-3), "clean": False},
+        ]
+        last = None  # type: ignore[assignment]
+        for kw in attempts:
+            try:
+                return _orig_union(base_wp, other, **kw)
+            except ValueError as e:
+                last = e
+                if "at least one solid" in str(e):
+                    s_base = _solid_from(base_wp) or base_solid
+                    s_other = _solid_from(other)
+                    if s_base is not None and s_other is not None:
+                        try:
+                            fused = s_base.fuse(
+                                s_other,
+                                glue=kw.get("glue", False),
+                                tol=kw.get("tol", None),
+                            )
+                            return _wp_from_solid(fused)
+                        except Exception:
+                            pass
+                    if _wp_needs_adopt_other_only(self) and _other_has_fusible_geometry(
+                        other
+                    ):
+                        return other
+                    raise
+                if not _null_shape_retryable(e):
+                    raise
+            except Exception as e:
+                last = e
+                if not _null_shape_retryable(e):
+                    raise
+        assert last is not None
+        raise last
 
     def union(self, *args, **kwargs):
         # LLMs often do: gear = cq.Workplane("XY"); gear = gear.union(tooth)
@@ -42,19 +139,27 @@ def _patch_cq_union_cut_chain() -> None:
             return _orig_union(self, **kwargs)
         if len(args) == 1:
             other = args[0]
-            if not _has_solid(self) and _has_solid(other):
+            if _wp_needs_adopt_other_only(self) and _other_has_fusible_geometry(other):
                 return other
             try:
-                return _orig_union(self, other, **kwargs)
+                return _union_one(self, other, kwargs)
             except ValueError as e:
-                if "at least one solid" in str(e) and _has_solid(other):
+                if (
+                    "at least one solid" in str(e)
+                    and _wp_needs_adopt_other_only(self)
+                    and _other_has_fusible_geometry(other)
+                ):
                     return other
                 raise
         # Multi-arg path
         try:
-            out = _orig_union(self, args[0], **kwargs)
+            out = _union_one(self, args[0], kwargs)
         except ValueError as e:
-            if "at least one solid" in str(e) and _has_solid(args[0]):
+            if (
+                "at least one solid" in str(e)
+                and _wp_needs_adopt_other_only(self)
+                and _other_has_fusible_geometry(args[0])
+            ):
                 out = args[0]
             else:
                 raise
@@ -231,12 +336,82 @@ def _rest_starts_with_keyword_arg(rest: str) -> bool:
     return bool(re.match(r"^[A-Za-z_]\w*\s*=", rest))
 
 
+def _expr_has_depth0_comma(s: str) -> bool:
+    """True if `s` contains a comma at nesting depth 0 (not inside parens/strings)."""
+    depth = 0
+    i = 0
+    n = len(s)
+    in_str = None
+    while i < n:
+        c = s[i]
+        if in_str:
+            if c == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if c == in_str:
+                in_str = None
+            i += 1
+            continue
+        if c in "\"'":
+            in_str = c
+            i += 1
+            continue
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == "," and depth == 0:
+            return True
+        i += 1
+    return False
+
+
+def _center_expr_needs_star_unpack(expr: str) -> bool:
+    """
+    CadQuery Workplane.center(x, y, z=None) takes separate floats, not one tuple.
+    Rewrite .center((a,b,c)) -> .center(*(a,b,c)).
+    """
+    s = expr.strip()
+    if len(s) < 2:
+        return False
+    if s[0] == "(" and s[-1] == ")":
+        if _matching_close_paren(s, 0) == len(s) - 1:
+            inner = s[1:-1].strip()
+            return bool(inner) and _expr_has_depth0_comma(inner)
+    if s[0] == "[" and s[-1] == "]":
+        depth = 0
+        in_str = None
+        end = -1
+        for i, c in enumerate(s):
+            if in_str:
+                if c == "\\":
+                    continue
+                if c == in_str:
+                    in_str = None
+                continue
+            if c in "\"'":
+                in_str = c
+                continue
+            if c == "[":
+                depth += 1
+            elif c == "]":
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+        if end == len(s) - 1:
+            inner = s[1:-1].strip()
+            return bool(inner) and _expr_has_depth0_comma(inner)
+    return False
+
+
 def _fix_workplane_center_kwarg(code: str) -> str:
     """
     LLMs pass center= to .workplane(); CadQuery raises TypeError (no such kwarg).
     Also fixes illegal .workplane(..., center=expr, pos) (positional after keyword).
 
-    Rewrites to .workplane(remaining_kwargs).center(expr) or .center(expr, trailing).
+    Rewrites to .workplane(remaining_kwargs).center(...) using *unpack for tuple/list
+    center coordinates so CadQuery gets x, y, z as separate arguments.
     """
     needle = ".workplane("
     out = []
@@ -268,15 +443,16 @@ def _fix_workplane_center_kwarg(code: str) -> str:
             pos = close_paren + 1
             continue
 
+        star = "*" if _center_expr_needs_star_unpack(expr) else ""
         if tail and _rest_starts_with_keyword_arg(tail):
             remaining = f"{before}, {tail}" if before else tail
-            center_call = f".center({expr})"
+            center_call = f".center({star}{expr})"
         elif tail:
             remaining = before
-            center_call = f".center({expr}, {tail})"
+            center_call = f".center({star}{expr}, {tail})"
         else:
             remaining = before
-            center_call = f".center({expr})"
+            center_call = f".center({star}{expr})"
 
         inner = remaining if remaining else ""
         fixed = f".workplane({inner}){center_call}"

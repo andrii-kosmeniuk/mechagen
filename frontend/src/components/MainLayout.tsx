@@ -53,7 +53,11 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
   const [historyParts, setHistoryParts] = useState<HistoryPart[]>([]);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
-  const [highDetail, setHighDetail] = useState(false);
+  const [highDetail, setHighDetail] = useState(true);
+  /** When on, backend skips CadQuery and returns JSON primitives (threads/knurl as stacked parts). */
+  const [proceduralParts, setProceduralParts] = useState(false);
+  /** When on, run improve-prompt before each generate (same as ✨ Polish, but automatic). */
+  const [polishBeforeGenerate, setPolishBeforeGenerate] = useState(true);
   const currentProjectId = 'default-project';
 
   const initRealtime = useCallback(() => {
@@ -161,14 +165,28 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
     setGenError(null);
     setGeomData(null);
     try {
-      console.log('[Generate] Sending prompt:', prompt);
+      let sendPrompt = prompt.trim();
+      if (polishBeforeGenerate) {
+        try {
+          const polished = await api.post<{ improvedPrompt?: string }>(
+            '/api/ai/improve-prompt',
+            { prompt: sendPrompt }
+          );
+          const imp = polished?.improvedPrompt?.trim();
+          if (imp) sendPrompt = imp;
+        } catch {
+          /* keep original prompt */
+        }
+      }
+      console.log('[Generate] Sending prompt:', sendPrompt);
       // Direct fetch — bypasses api helper to avoid silent failures
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt,
+          prompt: sendPrompt,
           highDetail,
+          proceduralParts,
           context: projectDesc.trim() || undefined,
           projectName: projectName.trim() || undefined,
         }),
@@ -189,18 +207,38 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
       const hasStl = typeof data.stl === 'string' && data.stl.length > 50;
       const okCode =
         typeof data.code === 'string' && data.code.trim().length >= 30;
-      if (!hasStl && !okCode) {
+      const hasParts =
+        Array.isArray((data as { parts?: unknown }).parts) &&
+        (data as { parts: unknown[] }).parts.length > 0;
+      if (!hasStl && !okCode && !hasParts) {
         throw new Error('AI returned no usable geometry. Try a different prompt.');
       }
 
-      console.log('[Generate] OK —', hasStl ? `stl ${data.stl?.length ?? 0} b64 chars` : `code length ${data.code.length}`);
+      console.log(
+        '[Generate] OK —',
+        hasParts
+          ? `parts ${(data as { parts: unknown[] }).parts.length}`
+          : hasStl
+            ? `stl ${data.stl?.length ?? 0} b64 chars`
+            : `code length ${(data as { code: string }).code.length}`
+      );
+      const gen = data as GeomData & { parts?: GeomData['parts'] };
       setGeomData({
         code: typeof data.code === 'string' ? data.code : '',
         stl: hasStl ? data.stl : undefined,
         name: data.name,
+        description: gen.description,
+        dimensions: gen.dimensions,
+        parts: hasParts ? gen.parts : undefined,
       });
       setCurrentPartId(crypto.randomUUID());
-      showToast(highDetail ? '✓ Generated (high detail)' : '✓ Generated!');
+      showToast(
+        proceduralParts
+          ? '✓ Generated (JSON parts)'
+          : highDetail
+            ? '✓ Generated (high detail)'
+            : '✓ Generated!'
+      );
     } catch (e) {
       const msg = (e as Error).message || 'Unknown error';
       console.error('[Generate] FAILED:', msg);
@@ -269,6 +307,10 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
           setMultiAgent={setMultiAgent}
           highDetail={highDetail}
           setHighDetail={setHighDetail}
+          proceduralParts={proceduralParts}
+          setProceduralParts={setProceduralParts}
+          polishBeforeGenerate={polishBeforeGenerate}
+          setPolishBeforeGenerate={setPolishBeforeGenerate}
           wireframe={wireframe}
           setWireframe={setWireframe}
           modelOpacity={modelOpacity}
@@ -296,6 +338,7 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
             materialKey={materialKey}
             wireframe={wireframe}
             modelOpacity={modelOpacity}
+            generationPrompt={prompt}
           />
 
           {/* Perspective label top-right */}

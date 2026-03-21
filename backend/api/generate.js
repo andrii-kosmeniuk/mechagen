@@ -25,8 +25,15 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST')   return sendError(res, 405, 'POST only');
 
   try {
-    const { stl, code } = await executeGenerate(req.body);
-    return res.status(200).json({ stl, code });
+    const out = await executeGenerate(req.body);
+    return res.status(200).json({
+      stl: out.stl,
+      code: out.code,
+      name: out.name,
+      parts: out.parts,
+      description: out.description,
+      dimensions: out.dimensions,
+    });
   } catch (err) {
     const status = err.status ?? 500;
     if (status >= 500) console.error('[generate]', err.message);

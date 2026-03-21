@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import type { Theme } from '../context/ThemeContext';
-import type { GeomData } from '../types';
+import type { GeomData, GeomPart } from '../types';
 
 // ── Types ────────────────────────────────────────────────────────────
 export type Viewport3DHandle = {
@@ -25,6 +25,8 @@ type Props = {
   wireframe?: boolean;
   /** 0–1 mesh opacity (1 = solid) */
   modelOpacity?: number;
+  /** Last generate prompt — used to parse tooth count / keyway for procedural gear */
+  generationPrompt?: string;
 };
 
 // ── Color themes ──────────────────────────────────────────────────────
@@ -106,6 +108,90 @@ function centerAndScale(geo: THREE.BufferGeometry, targetSize = 3.2) {
   geo.boundingBox!.getSize(s);
   const sc = targetSize / Math.max(s.x, s.y, s.z, 0.001);
   geo.scale(sc, sc, sc);
+}
+
+/**
+ * AI JSON primitives → Three.js group (centered & scaled like JSCAD path).
+ * MeshStandardMaterial + explicit defaults; returns vertex count for UI stats.
+ */
+function buildMeshFromParts(parts: GeomPart[]): {
+  group: THREE.Group;
+  vertexCount: number;
+} {
+  const root = new THREE.Group();
+  let vertexCount = 0;
+
+  for (const part of parts) {
+    const p = part.params || {};
+    const shape = (part.shape || 'box').toLowerCase();
+    let geo: THREE.BufferGeometry;
+
+    switch (shape) {
+      case 'box':
+        geo = new THREE.BoxGeometry(p.w || 1, p.h || 1, p.d || 1);
+        break;
+      case 'cylinder':
+        geo = new THREE.CylinderGeometry(
+          p.r || 0.5,
+          p.r || 0.5,
+          p.h || 1,
+          Math.max(3, Math.floor(p.radSeg || 32))
+        );
+        break;
+      case 'sphere':
+        geo = new THREE.SphereGeometry(p.r || 0.5, 32, 16);
+        break;
+      case 'torus':
+        geo = new THREE.TorusGeometry(p.r || 0.5, p.tube || 0.1, 16, 64);
+        break;
+      case 'cone':
+        geo = new THREE.ConeGeometry(
+          p.r || 0.5,
+          p.h || 1,
+          Math.max(3, Math.floor(p.radSeg || 32))
+        );
+        break;
+      default:
+        geo = new THREE.BoxGeometry(1, 1, 1);
+    }
+
+    const posAttr = geo.attributes.position;
+    if (posAttr) vertexCount += posAttr.count;
+
+    const mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(part.color || '#8a9aaa'),
+      metalness: part.metalness !== undefined ? part.metalness : 0.8,
+      roughness: part.roughness !== undefined ? part.roughness : 0.3,
+    });
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.userData.isGeomParts = true;
+    mesh.position.set(
+      part.position?.x || 0,
+      part.position?.y || 0,
+      part.position?.z || 0
+    );
+    mesh.rotation.set(
+      part.rotation?.x || 0,
+      part.rotation?.y || 0,
+      part.rotation?.z || 0
+    );
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    root.add(mesh);
+  }
+
+  const box = new THREE.Box3().setFromObject(root);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  root.position.set(-center.x, -center.y, -center.z);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const maxDim = Math.max(size.x, size.y, size.z, 1e-6);
+  const sc = 3.2 / maxDim;
+  root.scale.setScalar(sc);
+
+  return { group: root, vertexCount };
 }
 
 
@@ -419,10 +505,423 @@ function main() {
   return components.map(comp => ({ geom: runCode(comp.code), mat: comp.mat }));
 }
 
+// ── Procedural bolt builder (bypasses CadQuery for much better visuals) ──
+function buildBoltProcedural(
+  code: string,
+  theme: Theme,
+  _materialKey: string
+): THREE.Group {
+  // Parse parameters from the AI-generated Python code, with sensible M8 defaults
+  const param = (name: string, def: number) => {
+    const m = code.match(new RegExp(`(?:^|\\n)\\s*${name}\\s*=\\s*([\\d.]+)`));
+    return m ? parseFloat(m[1]) : def;
+  };
+  const d          = param('d', 8);
+  const p          = param('p', 1.25);
+  const head_h     = param('head_h', 6.4);
+  const head_w     = param('head_w', 13);
+  const washer_od  = param('washer_od', 17);
+  const washer_h   = param('washer_h', 1.6);
+  const smooth_len = param('smooth_len', 10);
+  const thread_len = param('thread_len', 20);
+
+  // Normalize: scale so total height ≈ 3 viewport units
+  const totalH = head_h + washer_h + smooth_len + thread_len + 1;
+  const sc = 3.2 / totalH;
+
+  const isLight = theme === 'light';
+  const mat = (color: string, metalness: number, roughness: number) =>
+    new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color(color),
+      metalness,
+      roughness,
+      clearcoat: 0.2,
+      clearcoatRoughness: 0.1,
+      envMapIntensity: isLight ? 0.6 : 1.0,
+    });
+
+  const headMat   = mat('#b0b8c4', 0.95, 0.18);
+  const washerMat = mat('#a0a8b4', 0.92, 0.22);
+  const shaftMat  = mat('#c0c8d0', 0.96, 0.14);
+  const threadMat = mat('#d0d4dc', 0.94, 0.12);
+  const valleyMat = mat('#98a0ac', 0.90, 0.25);
+  const tipMat    = mat('#b8c0c8', 0.94, 0.16);
+
+  const group = new THREE.Group();
+  let yOff = 0;
+
+  // ── Hex head (6-sided prism via CylinderGeometry with 6 radialSegments) ──
+  const headR = (head_w / 2) * sc;
+  const headH = head_h * sc;
+  const hexGeo = new THREE.CylinderGeometry(headR, headR, headH, 6);
+  const hexMesh = new THREE.Mesh(hexGeo, headMat);
+  hexMesh.position.y = headH / 2;
+  hexMesh.castShadow = hexMesh.receiveShadow = true;
+  group.add(hexMesh);
+  yOff += headH;
+
+  // Head top chamfer ring
+  const chamH = 0.06 * headH;
+  const chamGeo = new THREE.CylinderGeometry(headR * 0.88, headR, chamH, 6);
+  const chamMesh = new THREE.Mesh(chamGeo, headMat);
+  chamMesh.position.y = yOff - chamH / 2;
+  group.add(chamMesh);
+
+  // ── Washer ──
+  const wR = (washer_od / 2) * sc;
+  const wH = washer_h * sc;
+  const wShape = new THREE.Shape();
+  wShape.absarc(0, 0, wR, 0, Math.PI * 2, false);
+  const wHole = new THREE.Path();
+  wHole.absarc(0, 0, (d / 2 + 0.3) * sc, 0, Math.PI * 2, true);
+  wShape.holes.push(wHole);
+  const washerGeo = new THREE.ExtrudeGeometry(wShape, {
+    depth: wH, bevelEnabled: false,
+  });
+  washerGeo.rotateX(-Math.PI / 2);
+  const washerMesh = new THREE.Mesh(washerGeo, washerMat);
+  washerMesh.position.y = yOff;
+  washerMesh.castShadow = washerMesh.receiveShadow = true;
+  group.add(washerMesh);
+  yOff += wH;
+
+  // ── Smooth shank ──
+  const shankR = (d / 2) * sc;
+  const smoothH = smooth_len * sc;
+  const smoothGeo = new THREE.CylinderGeometry(shankR, shankR, smoothH, 32);
+  const smoothMesh = new THREE.Mesh(smoothGeo, shaftMat);
+  smoothMesh.position.y = yOff + smoothH / 2;
+  smoothMesh.castShadow = smoothMesh.receiveShadow = true;
+  group.add(smoothMesh);
+  yOff += smoothH;
+
+  // ── Threaded section (stacked disc + valley) ──
+  const threadH = thread_len * sc;
+  const turns = Math.max(3, Math.round(thread_len / p));
+  const threadSpacing = threadH / turns;
+  const diskH = threadSpacing * 0.45;
+  const valleyH = threadSpacing * 0.55;
+  const threadR = shankR * 1.06;
+  const valleyR = shankR * 0.92;
+
+  for (let i = 0; i < turns; i++) {
+    const y = yOff + i * threadSpacing;
+
+    // Thread crest (slightly wider disc)
+    const diskGeo = new THREE.CylinderGeometry(threadR, valleyR, diskH, 32);
+    const disk = new THREE.Mesh(diskGeo, threadMat);
+    disk.position.y = y + diskH / 2;
+    disk.castShadow = true;
+    group.add(disk);
+
+    // Valley (narrower)
+    const vGeo = new THREE.CylinderGeometry(valleyR, threadR, valleyH, 32);
+    const valley = new THREE.Mesh(vGeo, valleyMat);
+    valley.position.y = y + diskH + valleyH / 2;
+    valley.castShadow = true;
+    group.add(valley);
+  }
+  yOff += threadH;
+
+  // ── Conical tip ──
+  const tipH = d * 0.6 * sc;
+  const tipGeo = new THREE.ConeGeometry(shankR * 0.9, tipH, 32);
+  const tipMesh = new THREE.Mesh(tipGeo, tipMat);
+  tipMesh.position.y = yOff + tipH / 2;
+  tipMesh.castShadow = true;
+  group.add(tipMesh);
+
+  // Center the bolt vertically
+  const fullH = yOff + tipH;
+  group.position.y = -fullH / 2;
+
+  return group;
+}
+
+/**
+ * Procedural bolt preview — only when the user (and code) actually describe a fastener.
+ * Must NOT key off CadQuery alone: mis-generated Python can look like a bolt while the
+ * user asked for a bearing, which would replace the real STL with the wrong mesh.
+ */
+function isBoltPromptOrCode(
+  code: string,
+  name?: string,
+  generationPrompt?: string
+): boolean {
+  const userText = `${generationPrompt || ''} ${name || ''}`.toLowerCase();
+  if (
+    /\b(bearing|bearings|ball bearing|radial ball|deep groove|race|races|inner race|outer race|rolling|needle roller|slewing)\b/.test(
+      userText
+    )
+  ) {
+    return false;
+  }
+
+  const c = (code || '').toLowerCase();
+  if (
+    /\b(ball_orbit|n_balls|outer_race_id|inner_race_od)\b/.test(c) &&
+    c.includes('sphere(')
+  ) {
+    return false;
+  }
+
+  const n = (name || '').toLowerCase();
+  if (/\b(bolt|screw|fastener|cap screw|m[0-9]+.*thread)\b/.test(n)) return true;
+  if (/\b(bolt|screw|fastener|hex bolt|threaded shaft)\b/.test(userText)) return true;
+
+  return (
+    (c.includes('polygon(6') || c.includes('head_w') || c.includes('head_h')) &&
+    (c.includes('thread') || c.includes('threaded') || c.includes('smooth'))
+  );
+}
+
+type HelicalGearOpts = {
+  teeth: number;
+  outerRadius: number;
+  boreRadius: number;
+  faceWidth: number;
+  helixAngle: number;
+  keyway: boolean;
+  color: string;
+  metalness: number;
+  roughness: number;
+};
+
+/** Parse N, bore, module, width from CadQuery + user prompt (mm → scaled scene units). */
+function parseGearParams(
+  code: string,
+  generationPrompt: string,
+  name?: string
+): HelicalGearOpts {
+  const text = `${generationPrompt}\n${name || ''}\n${code}`;
+  const lower = text.toLowerCase();
+
+  let teeth = 24;
+  const teethPrompt = lower.match(/\b(\d{1,3})\s*teeth\b/);
+  if (teethPrompt) teeth = parseInt(teethPrompt[1], 10);
+  const nEq = code.match(/(?:^|\n)\s*N\s*=\s*(\d+)/im);
+  if (nEq) teeth = parseInt(nEq[1], 10);
+  const nTeeth = code.match(/n_teeth\s*=\s*(\d+)/i);
+  if (nTeeth) teeth = parseInt(nTeeth[1], 10);
+  teeth = Math.min(120, Math.max(6, teeth));
+
+  const num = (re: RegExp, def: number) => {
+    const m = code.match(re);
+    return m ? parseFloat(m[1]) : def;
+  };
+
+  const mMod = num(/\bm\s*=\s*([\d.]+)/, 2.5);
+  let pitchR = num(/pitch_r\s*=\s*([\d.]+)/, 0);
+  let outerMm = num(/outer_r\s*=\s*([\d.]+)/, 0);
+  if (!outerMm && pitchR > 0) outerMm = pitchR + mMod * 1.25;
+  if (!outerMm) outerMm = (teeth * mMod) / (2 * Math.PI) + mMod * 1.35;
+
+  let boreMm = num(/bore_r\s*=\s*([\d.]+)/, 0);
+  if (!boreMm) boreMm = num(/hole_r\s*=\s*([\d.]+)/, 0);
+  if (!boreMm) boreMm = num(/\bbore\s*=\s*([\d.]+)/, 4);
+  const widthMm = num(/\bwidth\s*=\s*([\d.]+)/, 8);
+
+  const maxMm = Math.max(outerMm * 2, widthMm, 1);
+  const sc = 1.75 / maxMm;
+
+  const helical = /\b(helical|helix)\b/i.test(text);
+  const helixAngle = helical ? 0.12 : 0.05;
+  const keyway = /\bkeyway\b/i.test(text);
+
+  return {
+    teeth,
+    outerRadius: outerMm * sc,
+    boreRadius: Math.min(boreMm * sc, outerMm * sc * 0.85),
+    faceWidth: widthMm * sc,
+    helixAngle,
+    keyway,
+    color: '#7a8a9a',
+    metalness: 0.9,
+    roughness: 0.18,
+  };
+}
+
+function isGearPromptOrCode(
+  code: string,
+  name: string | undefined,
+  generationPrompt: string
+): boolean {
+  if (/\b(bearing|ball\s*bearing)\b/i.test(`${name} ${generationPrompt}`)) return false;
+  const hay = `${name || ''} ${generationPrompt} ${code}`.toLowerCase();
+  if (/\b(gear|sprocket|pinion|cog)\b/.test(hay)) return true;
+  if (
+    /\bfor\s+i\s+in\s+range\s*\(\s*N\s*\)/.test(code) &&
+    (/tooth|teeth|pitch_r|spur/i.test(code) || /gear/i.test(hay))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Procedural helical/spur gear for viewport (avoids fragile CadQuery STL for preview). */
+function buildHelicalSpurGearProcedural(
+  code: string,
+  generationPrompt: string,
+  name: string | undefined,
+  theme: Theme,
+  _materialKey: string
+): THREE.Group {
+  const o = parseGearParams(code, generationPrompt, name);
+  const {
+    teeth,
+    outerRadius,
+    boreRadius,
+    faceWidth,
+    helixAngle,
+    keyway,
+    color,
+    metalness,
+    roughness,
+  } = o;
+
+  const isLight = theme === 'light';
+  const mat = (c: string, m: number, r: number, env = 1.0) =>
+    new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color(c),
+      metalness: m,
+      roughness: r,
+      clearcoat: 0.15,
+      clearcoatRoughness: 0.12,
+      envMapIntensity: isLight ? 0.55 * env : 0.95 * env,
+    });
+
+  const bodyMat = mat(color, metalness, roughness);
+  const chamferMat = mat('#8a9aaa', metalness, roughness - 0.04);
+  const toothMat = mat('#6a7a8a', Math.min(1, metalness + 0.02), roughness - 0.04);
+  const boreMat = mat('#1a2030', 0.55, 0.45, 0.7);
+  const keyMat = mat('#0a1020', 0.45, 0.55, 0.6);
+  const ringMat = mat('#b8c0c8', 0.96, 0.1);
+
+  const group = new THREE.Group();
+  const rimR = outerRadius * 0.92;
+
+  // Annulus body (axis Y)
+  const shape = new THREE.Shape();
+  shape.absarc(0, 0, rimR, 0, Math.PI * 2, false);
+  const holePath = new THREE.Path();
+  holePath.absarc(0, 0, boreRadius, 0, Math.PI * 2, true);
+  shape.holes.push(holePath);
+  const bodyGeo = new THREE.ExtrudeGeometry(shape, {
+    depth: faceWidth,
+    bevelEnabled: false,
+  });
+  bodyGeo.translate(0, 0, -faceWidth / 2);
+  bodyGeo.rotateX(Math.PI / 2);
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.castShadow = body.receiveShadow = true;
+  group.add(body);
+
+  // Top / bottom rim chamfers
+  const chamferH = Math.max(0.02, faceWidth * 0.12);
+  const chamTop = new THREE.Mesh(
+    new THREE.CylinderGeometry(rimR * 0.96, rimR * 0.88, chamferH, 64),
+    chamferMat
+  );
+  chamTop.position.y = faceWidth / 2 + chamferH / 2;
+  chamTop.castShadow = true;
+  group.add(chamTop);
+  const chamBot = new THREE.Mesh(
+    new THREE.CylinderGeometry(rimR * 0.88, rimR * 0.96, chamferH, 64),
+    chamferMat
+  );
+  chamBot.position.y = -(faceWidth / 2 + chamferH / 2);
+  chamBot.castShadow = true;
+  group.add(chamBot);
+
+  const toothW = outerRadius * 0.14;
+  const toothH = outerRadius * 0.18;
+  const toothD = faceWidth * 1.02;
+  const baseR = rimR - 0.02;
+
+  for (let i = 0; i < teeth; i++) {
+    const angle = (i / teeth) * Math.PI * 2;
+    const twist = helixAngle * (i / teeth);
+    const x = Math.cos(angle) * baseR;
+    const z = Math.sin(angle) * baseR;
+
+    const toothGeo = new THREE.BoxGeometry(toothW, toothD, toothH);
+    const tooth = new THREE.Mesh(toothGeo, toothMat);
+    tooth.position.set(x, 0, z);
+    tooth.rotation.y = -angle + twist;
+    tooth.castShadow = true;
+    group.add(tooth);
+
+    const tipGeo = new THREE.BoxGeometry(toothW * 0.72, toothD, toothH * 0.32);
+    const tip = new THREE.Mesh(tipGeo, toothMat);
+    const tipR = baseR + toothH * 0.42;
+    tip.position.set(Math.cos(angle) * tipR, 0, Math.sin(angle) * tipR);
+    tip.rotation.y = -angle + twist;
+    tip.castShadow = true;
+    group.add(tip);
+  }
+
+  // Bore liner (dark)
+  const boreGeo = new THREE.CylinderGeometry(
+    boreRadius * 0.995,
+    boreRadius * 0.995,
+    faceWidth + 0.02,
+    48
+  );
+  const bore = new THREE.Mesh(boreGeo, boreMat);
+  bore.castShadow = true;
+  group.add(bore);
+
+  const bc = Math.max(0.015, faceWidth * 0.06);
+  const boreChamTop = new THREE.Mesh(
+    new THREE.CylinderGeometry(boreRadius + bc, boreRadius * 0.98, bc, 48),
+    mat('#2a3040', 0.5, 0.5, 0.7)
+  );
+  boreChamTop.position.y = faceWidth / 2;
+  group.add(boreChamTop);
+  const boreChamBot = new THREE.Mesh(
+    new THREE.CylinderGeometry(boreRadius * 0.98, boreRadius + bc, bc, 48),
+    mat('#2a3040', 0.5, 0.5, 0.7)
+  );
+  boreChamBot.position.y = -faceWidth / 2;
+  group.add(boreChamBot);
+
+  if (keyway) {
+    const keyW = boreRadius * 0.35;
+    const keyH = boreRadius * 0.22;
+    const keywayMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(keyW, faceWidth + 0.04, keyH),
+      keyMat
+    );
+    keywayMesh.position.set(0, 0, boreRadius + keyH * 0.35);
+    keywayMesh.castShadow = true;
+    group.add(keywayMesh);
+  }
+
+  const ringGeo = new THREE.CylinderGeometry(
+    boreRadius * 1.06,
+    boreRadius * 1.06,
+    Math.max(0.04, faceWidth - 0.06),
+    48
+  );
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.castShadow = true;
+  group.add(ring);
+
+  return group;
+}
+
 // ── Main component ────────────────────────────────────────────────────
 export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
     function Viewport3D(
-      { geomData, scale, theme, materialKey = 'aluminum', wireframe = false, modelOpacity = 1 },
+      {
+        geomData,
+        scale,
+        theme,
+        materialKey = 'aluminum',
+        wireframe = false,
+        modelOpacity = 1,
+        generationPrompt = '',
+      },
       ref
     ) {
     const canvasRef    = useRef<HTMLCanvasElement>(null);
@@ -437,12 +936,18 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
     const materialKeyRef = useRef(materialKey);
     const autoSpinRef    = useRef(false);
     const promptRef      = useRef('');
+    const generationPromptRef = useRef(generationPrompt);
     themeRef.current     = theme;
     materialKeyRef.current = materialKey;
+    generationPromptRef.current = generationPrompt;
 
     const [autoSpin, setAutoSpin] = useState(false);
     const [exploded, setExploded]   = useState(false);
     const [renderError, setRenderError] = useState<string | null>(null);
+    const [jsonPartStats, setJsonPartStats] = useState<{
+      verts: number;
+      dimensions?: { x: number; y: number; z: number };
+    } | null>(null);
 
     useImperativeHandle(ref, () => ({
       getCameraPosition: () => cameraRef.current?.position.clone() ?? null,
@@ -478,18 +983,21 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
       const envRT = pmremGenerator.fromScene(roomEnv, 0.04);
       scene.environment = envRT.texture;
 
-      // Lighting
-      scene.add(new THREE.AmbientLight(0x334466, 2));
-      const d1 = new THREE.DirectionalLight(0x7eb8f7, 3);
-      d1.position.set(5, 8, 5);
-      d1.castShadow = true;
-      scene.add(d1);
-      const d2 = new THREE.DirectionalLight(0xf97316, 1.5);
-      d2.position.set(-5, -3, -5);
-      scene.add(d2);
-      const d3 = new THREE.DirectionalLight(0xffffff, 1);
-      d3.position.set(0, -8, 0);
-      scene.add(d3);
+      // Lighting — tuned for metal + thread highlights (JSON parts + STL)
+      scene.add(new THREE.AmbientLight(0x334466, 1.5));
+      const keyLight = new THREE.DirectionalLight(0xffffff, 3.5);
+      keyLight.position.set(4, 8, 4);
+      keyLight.castShadow = true;
+      scene.add(keyLight);
+      const fillLight = new THREE.DirectionalLight(0x8899cc, 1.2);
+      fillLight.position.set(-4, 2, -4);
+      scene.add(fillLight);
+      const rimLight = new THREE.DirectionalLight(0xf97316, 0.4);
+      rimLight.position.set(-3, -2, 3);
+      scene.add(rimLight);
+      const topLight = new THREE.DirectionalLight(0xccddff, 1.8);
+      topLight.position.set(0, 10, 0);
+      scene.add(topLight);
 
       const gridColor = isLight ? 0x9ca3b8 : 0x1e1e2e;
       const grid = new THREE.GridHelper(10, 10, gridColor, gridColor);
@@ -630,14 +1138,84 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
         });
         groupRef.current = null;
       }
+      setJsonPartStats(null);
       setRenderError(null);
       setExploded(false);
 
       if (!geomData) return;
 
+      // Procedural JSON from AI — render primitives only (no CadQuery / JSCAD)
+      if (Array.isArray(geomData.parts) && geomData.parts.length > 0) {
+        try {
+          const { group: inner, vertexCount } = buildMeshFromParts(geomData.parts);
+          setJsonPartStats({
+            verts: vertexCount,
+            dimensions: geomData.dimensions,
+          });
+          const wrapper = new THREE.Group();
+          wrapper.add(inner);
+          wrapper.rotation.z = 0.2;
+          wrapper.scale.set(scale.x, scale.y, scale.z);
+          scene.add(wrapper);
+          groupRef.current = wrapper;
+        } catch (err) {
+          console.error('[Viewport3D] JSON parts render failed:', err);
+          setRenderError((err as Error).message || 'Parts render failed');
+        }
+        return;
+      }
+
       // CadQuery pipeline returns STL; render mesh directly (code is Python, not JSCAD)
       if (geomData.stl && geomData.stl.length > 20) {
         try {
+          // For bolts: use procedural Three.js builder for much better visuals
+          if (
+            isBoltPromptOrCode(
+              geomData.code || '',
+              geomData.name,
+              generationPromptRef.current
+            )
+          ) {
+            console.log('[Viewport3D] Bolt detected — using procedural builder');
+            const boltGroup = buildBoltProcedural(
+              geomData.code || '',
+              themeRef.current,
+              materialKeyRef.current
+            );
+            const wrapper = new THREE.Group();
+            wrapper.add(boltGroup);
+            wrapper.rotation.z = 0.2;
+            wrapper.scale.set(scale.x, scale.y, scale.z);
+            scene.add(wrapper);
+            groupRef.current = wrapper;
+            return;
+          }
+
+          if (
+            isGearPromptOrCode(
+              geomData.code || '',
+              geomData.name,
+              generationPromptRef.current
+            )
+          ) {
+            console.log('[Viewport3D] Gear detected — using procedural helical/spur builder');
+            const gearGroup = buildHelicalSpurGearProcedural(
+              geomData.code || '',
+              generationPromptRef.current,
+              geomData.name,
+              themeRef.current,
+              materialKeyRef.current
+            );
+            const wrapper = new THREE.Group();
+            wrapper.add(gearGroup);
+            wrapper.rotation.y = 0.35;
+            wrapper.rotation.z = 0.15;
+            wrapper.scale.set(scale.x, scale.y, scale.z);
+            scene.add(wrapper);
+            groupRef.current = wrapper;
+            return;
+          }
+
           const group = loadStlBase64(
             geomData.stl,
             themeRef.current,
@@ -702,7 +1280,7 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
       }
       // Scale is applied in a separate effect so we don't re-execute JSCAD on slider moves
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [geomData]);
+    }, [geomData, generationPrompt]);
 
     // ── Scale update ─────────────────────────────────────────────────
     useEffect(() => {
@@ -763,6 +1341,33 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
     return (
       <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
         <canvas ref={canvasRef} id="three-canvas" className="three-canvas" />
+
+        {/* JSON parts: bbox + vertex stats (ids for integrations / debugging) */}
+        {jsonPartStats && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 10,
+              right: 12,
+              zIndex: 10,
+              fontSize: 10,
+              fontFamily: "'IBM Plex Mono', monospace",
+              color: 'var(--text-muted)',
+              textAlign: 'right',
+              lineHeight: 1.5,
+              pointerEvents: 'none',
+            }}
+          >
+            {jsonPartStats.dimensions && (
+              <>
+                <div id="dim-x">X: {jsonPartStats.dimensions.x} mm</div>
+                <div id="dim-y">Y: {jsonPartStats.dimensions.y} mm</div>
+                <div id="dim-z">Z: {jsonPartStats.dimensions.z} mm</div>
+              </>
+            )}
+            <div id="dim-v">Vertices: {jsonPartStats.verts.toLocaleString()}</div>
+          </div>
+        )}
 
         {/* Error overlay */}
         {renderError && (

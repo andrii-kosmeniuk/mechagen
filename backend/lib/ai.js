@@ -1,13 +1,29 @@
 'use strict';
 
 const API_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const TIMEOUT = 25_000; // 25 seconds — Vercel limit is 30
 
-// Smart model router — complex geometry gets a bigger model
-const MODELS = {
-  complex: 'meta/llama-3.3-70b-instruct',   // bearings, gears — complex loops
-  fast:    'meta/llama-3.1-70b-instruct',   // bolts, brackets — simpler code
-};
+/** Simple prompts — short CadQuery. */
+const TIMEOUT_FAST_MS = 45_000;
+/**
+ * Long / complex prompts — Nemotron can need 30–120s+ to finish long Python.
+ * Override with env MECHAGEN_AI_TIMEOUT_MS (milliseconds) if your host allows longer waits.
+ */
+const TIMEOUT_COMPLEX_MS = 120_000;
+
+/**
+ * Single chat model for all calls. Override MECHAGEN_AI_MODEL if the catalog id differs
+ * (some NVIDIA endpoints use a `nvidia/` prefix).
+ */
+function getChatModel() {
+  return (process.env.MECHAGEN_AI_MODEL || 'nemotron-3-super-120b-a12b').trim();
+}
+
+/** Max completion tokens — long CadQuery / JSON. Override MECHAGEN_AI_MAX_TOKENS if the API errors. */
+function getMaxOutputTokens() {
+  const v = parseInt(process.env.MECHAGEN_AI_MAX_TOKENS || '16384', 10);
+  if (Number.isFinite(v) && v >= 256) return Math.min(v, 131072);
+  return 16384;
+}
 
 /** User asked for a toothed gear — models often cheat with a plain ring; we inject a hard mandate. */
 function modelPromptDemandsToothedGear(prompt) {
@@ -17,53 +33,44 @@ function modelPromptDemandsToothedGear(prompt) {
   return /\b\d+\s*teeth\b/.test(p) || /\bteeth\b/.test(p) || /\btooth\b/.test(p);
 }
 
-function selectModel(prompt, options = {}) {
-  if (options.highDetail || options.gearMandate) return MODELS.complex;
+/** Ball / radial bearings — models often emit bad face selectors → empty-list Nth crashes. */
+function modelPromptDemandsBearing(prompt) {
   const p = (prompt || '').toLowerCase();
+  if (/\b(gear|gears|sprocket)\b/.test(p) && !/\b(bearing)\b/.test(p)) return false;
   if (
-    p.includes('bearing') ||
-    p.includes('gear') ||
-    p.includes('sprocket') ||
-    p.includes('thread') ||
-    p.includes('threaded') ||
-    p.includes('helical') ||
-    p.includes('washer') ||
-    p.includes('fastener') ||
-    p.includes('realistic') ||
-    p.includes('detailed') ||
-    p.includes('involute') ||
-    p.includes('spline') ||
-    p.includes('keyway') ||
-    p.includes('spindle') ||
-    p.includes('cnc') ||
-    p.includes('spur') ||
-    p.includes('robot') ||
-    p.includes('robotic') ||
-    p.includes('servo') ||
-    p.includes('revolute') ||
-    p.includes('6-dof') ||
-    p.includes('6 dof') ||
-    p.includes('dof') ||
-    (p.includes('joint') && p.includes('arm')) ||
-    (p.includes('flange') && (p.includes('mount') || p.includes('servo')))
+    /\b(ball bearing|radial ball|radial bearing|deep groove)\b/.test(p) ||
+    /\b(inner race|outer race)\b/.test(p) ||
+    (/\b(bearing|bearings)\b/.test(p) &&
+      /\b(ball|balls|race|races|inner|outer)\b/.test(p))
   ) {
-    return MODELS.complex;
+    return true;
   }
-  return MODELS.fast;
+  return false;
 }
 
 const SYSTEM_PROMPT = require('./cadquerySystemPrompt');
+const GEOMETRY_SYSTEM_PROMPT = require('./geometrySystemPrompt');
 
 
 const HIGH_DETAIL_SUFFIX =
   '\n\n[MECHAGEN: HIGH_DETAIL=true] Maximum practical detail. ' +
   'BOLTS / FASTENERS: hex head MUST be polygon(6) not a disk; ' +
   '**chamfer the hex head top edge** (`head.faces(">Z").edges().chamfer(0.4)`) and add a chamfered shank tip; ' +
-  '**n_grooves = min(160, turns * 24)** — very fine spiral; cutter box thin: `box(0.5, 0.2, pitch * 0.75)`. ' +
+  '**cuts_per_turn = 30; n_grooves = turns * cuts_per_turn** — very fine spiral; groove_width = 2*pi*(d/2)/cuts_per_turn + 0.4; cutter `box(0.45, groove_width, pitch * 0.5)`. ' +
   'Washer annulus: distinct OD/ID with real thickness. Smooth shank + threaded shank as separate geometry. ' +
   'BALL BEARINGS: **no chamfer, no fillet** after unions — `result = parts` only. ' +
   'GEARS / SPROCKETS: follow SECTION 5 spur-gear template — **N teeth** in `for i in range(N)`, bore cut, keyway cut; ' +
   'use `transformed(offset=..., rotate=...)` never `origin=`.';
+
+const BEARING_MANDATE_SUFFIX =
+  '\n\n[MECHAGEN: MANDATORY RADIAL BALL BEARING — READ CAREFULLY]\n' +
+  'The user asked for a **ball bearing** (races + rolling balls), not a plain washer ring.\n' +
+  '**REQUIRED:** Follow the **SECTION 5 — RADIAL BALL BEARING** template in the system prompt (annulus extrudes + `sphere` in a `for` loop + chained `union`).\n' +
+  'Set **n_balls** to the exact count from the user (e.g. six → `n_balls = 6`, eight → `8`).\n' +
+  '**FORBIDDEN (runtime crash):** `.faces(...)[n]`, `.edges(...)[n]`, `.nth(`, string selectors that pick the **Nth** face/edge, or compound selectors like `and` / `or` when either side can be empty — these raise `ValueError: Can not return the Nth element of an empty list`.\n' +
+  '**FORBIDDEN:** Any `.fillet` or `.chamfer` in the file for bearings.\n' +
+  'Build geometry only with `cq.Workplane`, `circle`, `extrude`, `sphere`, `union`, `cut` — no post-union face picking for “finishing”.\n' +
+  'Assign **`result`** to the final fused solid.';
 
 const GEAR_MANDATE_SUFFIX =
   '\n\n[MECHAGEN: MANDATORY TOOTHED GEAR — READ CAREFULLY]\n' +
@@ -82,6 +89,7 @@ function augmentModelPromptText(text, options = {}) {
   let t = text || '';
   if (!t) return t;
   if (options.gearMandate) t += GEAR_MANDATE_SUFFIX;
+  else if (options.bearingMandate) t += BEARING_MANDATE_SUFFIX;
   if (options.highDetail) t += HIGH_DETAIL_SUFFIX;
   return t;
 }
@@ -91,6 +99,21 @@ function augmentModelPromptText(text, options = {}) {
  * Text-only → string. With image → multimodal array.
  */
 function buildUserContent(prompt, image, options = {}) {
+  if (options.geometryParts) {
+    const base = (prompt ?? '').trim();
+    if (!image) return base;
+    const mediaType = image.startsWith('/9j/')
+      ? 'image/jpeg'
+      : image.startsWith('iVBORw0KGgo')
+        ? 'image/png'
+        : 'image/jpeg';
+    const raw =
+      base || 'Generate a JSON parts description for this mechanical part (primitives only).';
+    return [
+      { type: 'image_url', image_url: { url: `data:${mediaType};base64,${image}` } },
+      { type: 'text', text: raw },
+    ];
+  }
   if (!image) return augmentModelPromptText(prompt ?? '', options);
 
   const mediaType = image.startsWith('/9j/')
@@ -126,14 +149,30 @@ async function callNemotron(prompt, image, options = {}) {
     throw err;
   }
 
-  const gearMandate = modelPromptDemandsToothedGear(prompt);
-  const modelOpts = { ...options, gearMandate };
-  const model      = selectModel(prompt, modelOpts);
+  const geometryParts = !!options.geometryParts;
+  const gearMandate = geometryParts ? false : modelPromptDemandsToothedGear(prompt);
+  const bearingMandate =
+    geometryParts || gearMandate ? false : modelPromptDemandsBearing(prompt);
+  const modelOpts = { ...options, gearMandate, bearingMandate };
+  const model = getChatModel();
+
+  const envOverride = parseInt(process.env.MECHAGEN_AI_TIMEOUT_MS || '', 10);
+  const timeoutMs = (() => {
+    if (Number.isFinite(envOverride) && envOverride >= 10_000) {
+      return envOverride;
+    }
+    if (geometryParts) return 90_000;
+    if (options.highDetail || gearMandate || bearingMandate) {
+      return TIMEOUT_COMPLEX_MS;
+    }
+    return TIMEOUT_FAST_MS;
+  })();
+
   const controller = new AbortController();
-  const timer      = setTimeout(() => controller.abort(), TIMEOUT);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   console.log(
-    `[AI] model=${model} highDetail=${!!options.highDetail} gearMandate=${gearMandate} boltMandate=${boltMandate} prompt="${(prompt || '').slice(0, 60)}"`
+    `[AI] model=${model} highDetail=${!!options.highDetail} gearMandate=${gearMandate} bearingMandate=${bearingMandate} geometryParts=${geometryParts} prompt="${(prompt || '').slice(0, 60)}"`
   );
 
   let response;
@@ -146,12 +185,13 @@ async function callNemotron(prompt, image, options = {}) {
       },
       body: JSON.stringify({
         model,
-        temperature: gearMandate ? 0.12 : 0.2,
-        // Long CadQuery scripts; cap if your API returns “max_tokens” errors
-        max_tokens:
-          options.highDetail || gearMandate ? 6144 : 4096,
+        temperature: geometryParts ? 0.15 : gearMandate || bearingMandate ? 0.12 : 0.2,
+        max_tokens: getMaxOutputTokens(),
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
+          {
+            role: 'system',
+            content: geometryParts ? GEOMETRY_SYSTEM_PROMPT : SYSTEM_PROMPT,
+          },
           { role: 'user',   content: buildUserContent(prompt, image, modelOpts) }
         ]
       }),
@@ -159,7 +199,8 @@ async function callNemotron(prompt, image, options = {}) {
     });
   } catch (err) {
     if (err.name === 'AbortError') {
-      const e = new Error('AI request timed out after 25 seconds');
+      const sec = Math.round(timeoutMs / 1000);
+      const e = new Error(`AI request timed out after ${sec} seconds`);
       e.status = 504;
       throw e;
     }
@@ -190,14 +231,22 @@ async function callNemotron(prompt, image, options = {}) {
     throw e;
   }
 
-  // Strip markdown fences — models often wrap CadQuery in python blocks despite instructions
+  // Strip markdown fences — models often wrap output in code blocks despite instructions
   let code = content.trim();
   code = code
-    .replace(/^```(?:python|py|javascript|js|jscad)?\s*\r?\n?/im, '')
+    .replace(/^```(?:python|py|javascript|js|jscad|json)?\s*\r?\n?/im, '')
     .replace(/\r?\n```\s*$/im, '')
     .trim();
 
-  console.log(`[AI] code length=${code.length} chars`);
+  if (geometryParts) {
+    const start = code.indexOf('{');
+    const end = code.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      code = code.slice(start, end + 1);
+    }
+  }
+
+  console.log(`[AI] response length=${code.length} chars geometryParts=${geometryParts}`);
   return code;
 }
 

@@ -85,8 +85,15 @@ export default function apiPlugin() {
           catch { return sendJson(res, 400, { error: 'Invalid JSON body' }); }
 
           try {
-            const { stl, code } = await executeGenerate(body);
-            return sendJson(res, 200, { stl, code });
+            const out = await executeGenerate(body);
+            return sendJson(res, 200, {
+              stl: out.stl,
+              code: out.code,
+              name: out.name,
+              parts: out.parts,
+              description: out.description,
+              dimensions: out.dimensions,
+            });
           } catch (err) {
             const status = err.status ?? 500;
             console.error('[api/generate]', err.message);

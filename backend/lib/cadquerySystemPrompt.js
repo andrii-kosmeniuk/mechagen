@@ -113,6 +113,12 @@ FILLET / CHAMFER (Open CASCADE often fails here):
 - **Other parts:** **NEVER** do \`result = result.edges().fillet(0.5)\` on the **whole** model after **unioning many solids** (e.g. balls + races). If you soften: **tiny** chamfer on **one** external face only, e.g. \`result.faces(">Z").edges().chamfer(0.12)\`, only when the stack still has a solid.
 - Prefer **no** finish operation over a failed export. HIGH_DETAIL does **not** require fillet on bearings.
 
+SELECTOR SAFETY — **Nth element / empty list** (common crash):
+- \`ValueError: Can not return the Nth element of an empty list\` happens when a selector returns **no** faces/edges but you still ask for the **Nth** match (index, \`nth\`, or composite \`and\`/\`or\` where one branch is empty).
+- **FORBIDDEN:** \`.faces(">Z")[0]\`, \`.faces(">Z")[1]\`, \`.edges("|X")[2]\`, string selectors containing \`nth\` / \`Nth\`, or chained picks on uncertain topology after booleans.
+- **FORBIDDEN:** risky compounds like \`faces(">Z and <Z")\` unless you are certain both sides exist.
+- **Ball bearings:** do **not** use \`.faces(...)\` / \`.edges(...)\` for “finishing” after \`union\` — use only SECTION 5 **RADIAL BALL BEARING** style: annulus \`extrude\`, balls via \`workplane(offset=...).center(x,y).sphere(r)\`, then \`union\`. No post-union selectors.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SECTION 4 — DIMENSION STANDARDS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -140,6 +146,7 @@ BEARINGS — CADQUERY KERNEL RULES (avoid runtime errors):
 GEARS:
   Use involute-like tooth blocks or cq.Compound; do not output a plain cylinder for “gear”.
   When unioning teeth in a loop, the accumulator must **already hold a solid** before the first \`.union(tooth)\` — e.g. \`gear = cq.Workplane("XY").circle(root_r).extrude(width)\` first, **or** set \`gear = tooth0\` then \`for i in range(1,N): gear = gear.union(tooth_i)\`. Do not keep \`gear = cq.Workplane("XY")\` with no extrude and then \`gear.union(tooth)\` (empty stack).
+  **OCCT fuse:** tooth solids that only *touch* the blank on one face (zero overlap) often yield \`ValueError: Null TopoDS_Shape\`. Make each tooth **slightly intersect** the gear disk (e.g. extend tooth 0.05 mm past \`root_r\`) so booleans are robust.
 
 NEMA STEPPER FLANGES:
   NEMA14: 35.2mm square, M3 holes on 26mm PCD
