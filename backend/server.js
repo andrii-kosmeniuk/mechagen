@@ -7,7 +7,7 @@ const { randomUUID } = require("crypto");
 
 const PORT    = process.env.PORT || 3001;
 const API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-const MODEL   = "mistralai/mistral-small-4-119b-2603";
+const MODEL   = "mistralai/mistral-large-3-675b-instruct-2512";
 
 // Frontend HTML path — works both locally and on Railway
 const FRONTEND_HTML = path.join(__dirname, "..", "frontend", "index.html");
@@ -15,12 +15,16 @@ const FRONTEND_HTML = path.join(__dirname, "..", "frontend", "index.html");
 // Load .env manually — no dotenv needed in Node 18+
 const envPath = path.join(__dirname, ".env");
 if (fs.existsSync(envPath)) {
-  fs.readFileSync(envPath, "utf8")
-    .split("\n")
-    .forEach(line => {
-      const [k, ...v] = line.split("=");
-      if (k && v.length) process.env[k.trim()] = v.join("=").trim();
-    });
+  try {
+    fs.readFileSync(envPath, "utf8")
+      .split("\n")
+      .forEach(line => {
+        const [k, ...v] = line.split("=");
+        if (k && v.length) process.env[k.trim()] = v.join("=").trim();
+      });
+  } catch (err) {
+    console.warn("Could not read .env file, relying on process.env:", err.message);
+  }
 }
 
 const SYSTEM = `You are a professional 3D mechanical parts geometry engine specialized in generating precise, physically accurate, and visually realistic mechanical components for robotics, automotive, and aerospace engineering.
