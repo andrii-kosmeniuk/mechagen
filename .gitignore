@@ -1,0 +1,14 @@
+# Environment variables — never commit these
+.env
+*.env.local
+
+# Node modules
+node_modules/
+backend/node_modules/
+
+# Vercel build output
+.vercel/
+
+# OS files
+.DS_Store
+Thumbs.db
