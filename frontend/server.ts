@@ -26,13 +26,20 @@ app.get('/api/auth/me', (req, res) => {
   res.json({ id: '1', name: 'Demo User', email: 'user@example.com', role: 'engineer' });
 });
 
+app.post('/api/users/me', (req, res) => {
+  res.json({ success: true });
+});
+
+app.get('/api/users/me', (req, res) => {
+  res.json({ id: '1', name: 'Demo User', email: 'user@example.com', role: 'engineer' });
+});
+
 // Mock AI Endpoints
 app.post('/api/ai/improve-prompt', (req, res) => {
   res.json({ improvedPrompt: "Optimized: " + req.body.prompt });
 });
 
 app.post('/api/ai/generate', (req, res) => {
-  // Return some mock geometry data
   res.json({ 
     id: 'part-' + Date.now(),
     geomData: { type: 'box', width: 1, height: 1, depth: 1 },
@@ -40,16 +47,8 @@ app.post('/api/ai/generate', (req, res) => {
   });
 });
 
-app.post('/api/ai/variants', (req, res) => {
-  res.json([{ id: 'v1', geomData: { type: 'box', width: 1.2, height: 0.8, depth: 1 } }]);
-});
-
 app.post('/api/ai/analyze', (req, res) => {
   res.json({ analysis: "Structural integrity verified. Stress concentrations at mounting points within limits." });
-});
-
-app.get('/api/projects/:id/parts', (req, res) => {
-  res.json([]);
 });
 
 // Serve static files
