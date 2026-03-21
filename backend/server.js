@@ -5,9 +5,9 @@ const path          = require("path");
 const { exec }      = require("child_process");
 const { randomUUID } = require("crypto");
 
-const PORT    = process.env.PORT || 3001;
+const PORT    = process.env.PORT || 3005;
 const API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-const MODEL   = "mistralai/mistral-large-3-675b-instruct-2512";
+const MODEL   = "mistralai/mistral-small-4-119b-2603";
 
 // Frontend HTML path — works both locally and on Railway
 const FRONTEND_HTML = path.join(__dirname, "..", "frontend", "index.html");
@@ -350,7 +350,14 @@ function apiFetch(body, apiKey) {
       res.on("data", chunk => data += chunk);
       res.on("end", () => resolve({ status: res.statusCode, body: data }));
     });
-    req.on("error", reject);
+    
+    // 90 second timeout on backend request to prevent silent server hangs
+    req.setTimeout(90000, () => {
+      req.destroy();
+      reject(new Error("NVIDIA API connection timed out after 90 seconds."));
+    });
+
+    req.on("error", err => reject(err));
     req.write(payload);
     req.end();
   });
@@ -808,7 +815,7 @@ QUALITY RULES:
   }
 });
 
-server.listen(PORT, "0.0.0.0", () => {
+server.listen(PORT, "127.0.0.1", () => {
   console.log(`\nMechaGen  →  http://localhost:${PORT}`);
   console.log(`Model     →  ${MODEL}\n`);
 });
