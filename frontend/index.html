@@ -15,6 +15,8 @@
     <script src="https://cdn.jsdelivr.net/npm/@jscad/modeling@2/dist/jscad-modeling.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/STLExporter.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/OBJExporter.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/environments/RoomEnvironment.js"></script>
     <style>
         :root {
             --bg-primary: #0a0a0f;
@@ -488,6 +490,12 @@
                             <button class="chip" id="btn-variants">Variants</button>
                         </div>
 
+                        <!-- Quick Exports -->
+                        <div class="mt-3 flex-between gap-2">
+                            <button class="chip w-full" id="btn-quick-stl" style="background: var(--accent-blue); color: #000; border: none;">Download STL</button>
+                            <button class="chip w-full" id="btn-quick-obj">Download OBJ</button>
+                        </div>
+
                         <!-- JSCAD Code Viewer (hidden by default) -->
                         <div id="scad-viewer" style="display:none;margin-top:1rem;">
                             <div class="flex-between" style="margin-bottom:0.5rem;">
@@ -807,39 +815,49 @@
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 1.2;
+            renderer.toneMappingExposure = 1.4;
             renderer.outputEncoding = THREE.sRGBEncoding;
 
-            // ─── 5-LIGHT STUDIO SETUP ──────────────────────────
-            // 1. Ambient — fills shadows softly
-            const ambient = new THREE.AmbientLight(0xffffff, 0.5);
-            scene.add(ambient);
+            // 1. Strong key light — top right
+            const key = new THREE.DirectionalLight('#ffffff', 3.5);
+            key.position.set(4, 8, 4);
+            key.castShadow = true;
+            // Setup shadow resolution
+            key.shadow.mapSize.width = 2048;
+            key.shadow.mapSize.height = 2048;
+            key.shadow.camera.near = 0.1;
+            key.shadow.camera.far = 50;
+            scene.add(key);
 
-            // 2. Key light — main white from top-right
-            const keyLight = new THREE.DirectionalLight(0xffffff, 2.8);
-            keyLight.position.set(4, 8, 5);
-            keyLight.castShadow = true;
-            keyLight.shadow.mapSize.width = 2048;
-            keyLight.shadow.mapSize.height = 2048;
-            keyLight.shadow.camera.near = 0.1;
-            keyLight.shadow.camera.far = 50;
-            keyLight.shadow.bias = -0.001;
-            scene.add(keyLight);
+            // 2. Fill light — left
+            const fill = new THREE.DirectionalLight('#c8d8ff', 1.2);
+            fill.position.set(-5, 3, -2);
+            scene.add(fill);
 
-            // 3. Fill light — left, cool blue-white
-            const fillLight = new THREE.DirectionalLight(0xc8d8ff, 1.0);
-            fillLight.position.set(-5, 3, -2);
-            scene.add(fillLight);
+            // 3. Rim light — back (makes balls pop)
+            const rim = new THREE.DirectionalLight('#ffffff', 2.0);
+            rim.position.set(0, -4, -6);
+            scene.add(rim);
 
-            // 4. Rim light — back-bottom, warm for edge highlights
-            const rimLight = new THREE.DirectionalLight(0xffe8cc, 0.7);
-            rimLight.position.set(0, -3, -5);
-            scene.add(rimLight);
+            // 4. Top light
+            const top = new THREE.DirectionalLight('#ffffff', 1.5);
+            top.position.set(0, 10, 0);
+            scene.add(top);
 
-            // 5. Top light — straight down, catches horizontal surfaces
-            const topLight = new THREE.DirectionalLight(0xffffff, 1.2);
-            topLight.position.set(0, 10, 0);
-            scene.add(topLight);
+            // 5. Ambient (low — keeps darks dark)
+            scene.add(new THREE.AmbientLight('#334466', 0.3));
+
+            // ─── ENVIRONMENT MAP (key for metallic balls) ─
+            const pmrem = new THREE.PMREMGenerator(renderer);
+            pmrem.compileEquirectangularShader();
+            
+            // Wait for constructor to load if relying on CDN correctly
+            if (THREE.RoomEnvironment) {
+                const envScene = new THREE.RoomEnvironment();
+                const envMap = pmrem.fromScene(envScene, 0.04);
+                scene.environment = envMap.texture;
+            }
+            pmrem.dispose();
 
             grid = new THREE.GridHelper(10, 20, 0x1a1a2e, 0x141420);
             scene.add(grid);
@@ -1209,54 +1227,46 @@
             }
         }
 
-        function calculateNormal(pts) {
-            const v1 = [pts[1][0]-pts[0][0], pts[1][1]-pts[0][1], pts[1][2]-pts[0][2]];
-            const v2 = [pts[2][0]-pts[0][0], pts[2][1]-pts[0][1], pts[2][2]-pts[0][2]];
-            const n  = [
-                v1[1]*v2[2] - v1[2]*v2[1],
-                v1[2]*v2[0] - v1[0]*v2[2],
-                v1[0]*v2[1] - v1[1]*v2[0]
-            ];
-            const len = Math.sqrt(n[0]*n[0] + n[1]*n[1] + n[2]*n[2]) || 1;
-            return [n[0]/len, n[1]/len, n[2]/len];
-        }
-
+        // No longer relying on custom normal calculation; using ThreeJS smooth normals
         function jscadToThree(jscadGeom) {
             const { geometries } = jscadModeling;
 
-            // Handle arrays of geometries (e.g. from unions that didn't merge fully)
             let geomToConvert = jscadGeom;
             if (Array.isArray(jscadGeom)) {
-                // simple fallback if multiple geometries are returned
                 geomToConvert = jscadGeom[0];
             }
 
             const polygons = geometries.geom3.toPolygons(geomToConvert);
             const vertices = [];
-            const normals  = [];
 
             polygons.forEach(polygon => {
                 const pts = polygon.vertices;
                 if (pts.length < 3) return;
-                const normal = calculateNormal(pts);
 
+                // Fan triangulation
                 for (let i = 1; i < pts.length - 1; i++) {
-                    vertices.push(pts[0][0], pts[0][1], pts[0][2]);
-                    normals.push(normal[0], normal[1], normal[2]);
-                    vertices.push(pts[i][0], pts[i][1], pts[i][2]);
-                    normals.push(normal[0], normal[1], normal[2]);
-                    vertices.push(pts[i+1][0], pts[i+1][1], pts[i+1][2]);
-                    normals.push(normal[0], normal[1], normal[2]);
+                    vertices.push(
+                        pts[0][0], pts[0][1], pts[0][2],
+                        pts[i][0], pts[i][1], pts[i][2],
+                        pts[i+1][0], pts[i+1][1], pts[i+1][2]
+                    );
                 }
             });
 
-            const geo = new THREE.BufferGeometry();
+            let geo = new THREE.BufferGeometry();
             geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-            geo.setAttribute('normal',   new THREE.Float32BufferAttribute(normals, 3));
+            
+            // Critical for smooth, pro-looking metallic reflections
+            if (THREE.BufferGeometryUtils) {
+                // Merge coincident vertices within a tolerance so adjacent faces share normals
+                geo = THREE.BufferGeometryUtils.mergeVertices(geo, 1e-4);
+            }
+            geo.computeVertexNormals();
+
             return geo;
         }
 
-        function renderGeometry(geo) {
+        function renderGeometry(geo, promptContext = '') {
             if (mesh) {
                 scene.remove(mesh);
                 if (mesh.geometry) mesh.geometry.dispose();
@@ -1268,26 +1278,30 @@
             const center = new THREE.Vector3();
             geo.boundingBox.getCenter(center);
             geo.translate(-center.x, -center.y, -center.z);
-            geo.computeBoundingBox();
+
             const size = new THREE.Vector3();
             geo.boundingBox.getSize(size);
-            const maxDim = Math.max(size.x, size.y, size.z) || 1;
-            const scale = 3.2 / maxDim;
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const scale  = 3.0 / maxDim;
             geo.scale(scale, scale, scale);
 
-            // Dispose old mesh
-            if (mesh) {
-                scene.remove(mesh);
-                if (mesh.geometry) mesh.geometry.dispose();
-                if (mesh.material) mesh.material.dispose();
-            }
+            const partType = promptContext.toLowerCase();
+            const isBearing = partType.includes('bearing') || partType.includes('ball');
+            const isBolt    = partType.includes('bolt')    || partType.includes('screw');
+            const isGear    = partType.includes('gear')    || partType.includes('cog');
 
-            const mat = new THREE.MeshStandardMaterial({
-                color: new THREE.Color('#8a9aaa'),
-                metalness: 0.90, roughness: 0.18,
-                envMapIntensity: 2.0
+            const material = new THREE.MeshStandardMaterial({
+                color: new THREE.Color(
+                  isBearing ? '#90a0a8' :
+                  isBolt    ? '#a0a8b0' :
+                  isGear    ? '#8a9aaa' : '#9aaaba'
+                ),
+                metalness:        0.98,
+                roughness:        isBearing ? 0.08 : 0.15,
+                envMapIntensity:  isBearing ? 3.0  : 2.0,
             });
-            mesh = new THREE.Mesh(geo, mat);
+
+            mesh = new THREE.Mesh(geo, material);
             mesh.castShadow = true;
             mesh.receiveShadow = true;
             scene.add(mesh);
@@ -1393,7 +1407,7 @@
                         try {
                             const geometry = runJSCAD(currentScadCode);
                             const threeGeometry = jscadToThree(geometry);
-                            renderGeometry(threeGeometry);
+                            renderGeometry(threeGeometry, prompt);
 
                             addHistory('[JSCAD] ' + prompt, null);
                             showToast(`✓ JSCAD model generated`);
@@ -1640,7 +1654,7 @@
             URL.revokeObjectURL(url);
         }
 
-        document.getElementById('btn-export-stl').addEventListener('click', () => {
+        const triggerExportSTL = () => {
             if (!mesh || !THREE.STLExporter) {
                 showToast('No model to export or exporter script failed to load', 'error');
                 return;
@@ -1654,9 +1668,9 @@
             } catch (err) {
                 showToast('Failed to export STL', 'error');
             }
-        });
+        };
 
-        document.getElementById('btn-export-obj').addEventListener('click', () => {
+        const triggerExportOBJ = () => {
             if (!mesh || !THREE.OBJExporter) {
                 showToast('No model to export or exporter script failed to load', 'error');
                 return;
@@ -1670,7 +1684,13 @@
             } catch (err) {
                 showToast('Failed to export OBJ', 'error');
             }
-        });
+        };
+
+        document.getElementById('btn-export-stl').addEventListener('click', triggerExportSTL);
+        document.getElementById('btn-quick-stl').addEventListener('click', triggerExportSTL);
+
+        document.getElementById('btn-export-obj').addEventListener('click', triggerExportOBJ);
+        document.getElementById('btn-quick-obj').addEventListener('click', triggerExportOBJ);
 
         document.getElementById('btn-screenshot').addEventListener('click', () => {
             const canvas = document.getElementById('three-canvas');

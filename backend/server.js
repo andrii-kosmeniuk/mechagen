@@ -584,59 +584,78 @@ const {
   utils: { degToRad }
 } = jscadModeling;
 
-EXAMPLE — Hex Bolt M8:
+EXAMPLE — Radial Ball Bearing:
 \`\`\`javascript
 const {
-  primitives: { cylinder, cube },
-  booleans: { union, subtract },
-  transforms: { translate, rotate },
+  primitives: { cylinder, sphere, torus },
+  booleans: { union, subtract, intersect },
+  transforms: { translate, rotate, rotateX, rotateZ },
   utils: { degToRad }
 } = jscadModeling;
 
 function main() {
-  // Parameters
-  const boltD = 8;
-  const boltL = 40;
-  const headH = 6.4;
-  const headW = 13;
+  const outerD    = 52;
+  const innerD    = 25;
+  const width     = 15;
+  const ballD     = 7.5;
+  const ballOrbit = 18.5;
+  const ballCount = 8;
 
-  // Hex head ($fn=6 equivalent)
-  const hexHead = cylinder({
-    height: headH,
-    radius: headW / 2,
-    segments: 6
-  });
-
-  // Washer
-  const washer = subtract(
-    cylinder({ height: 2, radius: headW * 0.6 / 2, segments: 64 }),
-    cylinder({ height: 2.1, radius: boltD / 2, segments: 64 })
-  );
-
-  // Shaft
-  const shaft = cylinder({
-    height: boltL,
-    radius: boltD / 2,
-    segments: 64
-  });
-
-  // Threads (loop)
-  const threads = [];
-  for (let i = 0; i < boltL / 1.25; i++) {
-    threads.push(
-      translate([0, 0, i * 1.25 - boltL/2],
-        cylinder({ height: 0.6, radius: boltD/2 + 0.5, segments: 32 })
+  // Balls
+  const balls = [];
+  for (let i = 0; i < ballCount; i++) {
+    const angle = degToRad((360 / ballCount) * i);
+    balls.push(
+      translate([Math.cos(angle) * ballOrbit, Math.sin(angle) * ballOrbit, 0],
+        sphere({ radius: ballD/2, segments: 64 })
       )
     );
   }
 
-  // Assemble
-  return union(
-    translate([0, 0, boltL/2 + headH/2], hexHead),
-    translate([0, 0, boltL/2 - 1],       washer),
-    shaft,
-    ...threads
+  // Cage
+  const cageRingTop = subtract(
+    cylinder({ height: 1.5, radius: ballOrbit + ballD/2 - 1, segments: 64 }),
+    cylinder({ height: 1.8, radius: ballOrbit - ballD/2 + 1, segments: 64 })
   );
+  const cageRingBot = subtract(
+    cylinder({ height: 1.5, radius: ballOrbit + ballD/2 - 1, segments: 64 }),
+    cylinder({ height: 1.8, radius: ballOrbit - ballD/2 + 1, segments: 64 })
+  );
+  let cageFull = union(
+    translate([0, 0, width/2 - 3], cageRingTop),
+    translate([0, 0, -width/2 + 1.5], cageRingBot)
+  );
+  for (let i = 0; i < ballCount; i++) {
+    const angle = degToRad((360 / ballCount) * i + 180/ballCount);
+    cageFull = union(cageFull, 
+      translate([Math.cos(angle) * ballOrbit, Math.sin(angle) * ballOrbit, 0],
+        cylinder({ height: width - 4, radius: 1.2, segments: 16 })
+      )
+    );
+  }
+
+  // Inner/Outer Rings
+  const outerRingSimple = subtract(
+    cylinder({ height: width, radius: outerD/2, segments: 128 }),
+    cylinder({ height: width + 0.2, radius: outerD/2 - 5.8, segments: 128 })
+  );
+  const innerRingSimple = subtract(
+    cylinder({ height: width + 0.4, radius: innerD/2 + 5, segments: 128 }),
+    cylinder({ height: width + 0.6, radius: innerD/2, segments: 128 })
+  );
+
+  let outerWithPockets = outerRingSimple;
+  let innerWithPockets = innerRingSimple;
+  for (let i = 0; i < ballCount; i++) {
+    const angle = degToRad((360 / ballCount) * i);
+    const pocket = translate([Math.cos(angle) * ballOrbit, Math.sin(angle) * ballOrbit, 0],
+      sphere({ radius: ballD/2 + 0.5, segments: 32 })
+    );
+    outerWithPockets = subtract(outerWithPockets, pocket);
+    innerWithPockets = subtract(innerWithPockets, pocket);
+  }
+
+  return union(outerWithPockets, innerWithPockets, ...balls, cageFull);
 }
 \`\`\`
 
@@ -689,13 +708,14 @@ function main() {
 \`\`\`
 
 QUALITY RULES:
-- segments: 64 for visible cylinders, 32 for small, 6 for hex, 8 for teeth
-- Always subtract bore holes with subtract()
-- Add chamfers with cylinder() radius1 !== radius2
-- Threads: for() loop with small cylinders
-- Knurling: for() loop with small cubes around perimeter
-- Always return single geometry from main()
-- Real world dimensions (mm) always`;
+- EXTENSIVE DETAIL: Build EXACTLY like a professional CAD engineer. DO NOT simplify. Generate ALL components (e.g., for bearings: inner race, outer race, ball cage, balls, chamfers, and precise ball grooves).
+- HIGHEST RESOLUTION: Use \`segments: 128\` for ALL primary cylinders, spheres, and toruses to ensure perfectly smooth 3D arcs. Use \`segments: 64\` for smaller subcomponents.
+- Always subtract bore holes and internal grooves with \`subtract()\`
+- Add chamfers using \`cylinder({ radius1, radius2 })\` with differing radii.
+- Real world dimensions (mm) always.
+- Complex geometric arrays (like bearing balls) MUST use Javascript loops (\`for\`) and \`Math.sin\`/\`Math.cos\` to mathematically position them.
+- CRITICAL JS RULE: If you are unioning or subtracting inside a loop, YOU MUST declare the base variable with \`let\` instead of \`const\` to avoid "Assignment to constant variable" errors (e.g., \`let outerRace = cylinder(...); for(...) { outerRace = subtract(outerRace, hole); }\`).
+- Always return a single assembled geometry from \`main()\`.`;
 
     try {
       const result = await apiFetch({
