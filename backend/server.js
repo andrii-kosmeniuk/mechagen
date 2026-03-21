@@ -5,7 +5,7 @@ const path          = require("path");
 const { exec }      = require("child_process");
 const { randomUUID } = require("crypto");
 
-const PORT    = process.env.PORT || 3005;
+const PORT    = process.env.PORT || 3001;
 const API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 const MODEL   = "mistralai/mistral-small-4-119b-2603";
 
