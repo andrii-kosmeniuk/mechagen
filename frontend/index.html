@@ -621,6 +621,7 @@
     <script>
         // --- Configuration & State ---
         const API_BASE = window.location.origin;
+        const BACKEND_URL = ''; // same-origin — works locally and in production
         let authToken = localStorage.getItem('auth_token');
         let currentUser = null;
         let currentProjectId = 'default-project';
@@ -875,24 +876,60 @@
         }
 
         function buildMesh(geomData) {
+            buildCompoundMesh(geomData);
+        }
+
+        function buildCompoundMesh(geomData) {
             if (mesh) scene.remove(mesh);
-            
-            let geometry;
-            if (geomData.type === 'box') {
-                geometry = new THREE.BoxGeometry(geomData.width || 1, geomData.height || 1, geomData.depth || 1);
-            } else {
-                geometry = new THREE.TorusKnotGeometry(0.5, 0.2, 100, 16);
+
+            const group = new THREE.Group();
+            const parts = geomData.parts || [];
+
+            parts.forEach(part => {
+                const p = part.params || {};
+                let geometry;
+
+                switch (part.shape) {
+                    case 'box':
+                        geometry = new THREE.BoxGeometry(p.w || 1, p.h || 1, p.d || 1);
+                        break;
+                    case 'cylinder':
+                        geometry = new THREE.CylinderGeometry(p.r || 0.5, p.r || 0.5, p.h || 1, p.radSeg || 32);
+                        break;
+                    case 'sphere':
+                        geometry = new THREE.SphereGeometry(p.r || 0.5, 32, 16);
+                        break;
+                    case 'torus':
+                        geometry = new THREE.TorusGeometry(p.r || 0.5, p.tube || 0.2, 16, 32);
+                        break;
+                    case 'cone':
+                        geometry = new THREE.ConeGeometry(p.r || 0.5, p.h || 1, 32);
+                        break;
+                    default:
+                        geometry = new THREE.BoxGeometry(1, 1, 1);
+                }
+
+                const material = new THREE.MeshStandardMaterial({
+                    color: new THREE.Color(part.color || '#8a9aaa'),
+                    metalness: part.metalness !== undefined ? part.metalness : 0.8,
+                    roughness: part.roughness !== undefined ? part.roughness : 0.2
+                });
+
+                const m = new THREE.Mesh(geometry, material);
+                if (part.position) m.position.set(part.position.x || 0, part.position.y || 0, part.position.z || 0);
+                if (part.rotation) m.rotation.set(part.rotation.x || 0, part.rotation.y || 0, part.rotation.z || 0);
+                group.add(m);
+            });
+
+            // Fallback for simple geomData (legacy)
+            if (parts.length === 0 && geomData.type === 'box') {
+                const g = new THREE.BoxGeometry(geomData.width || 1, geomData.height || 1, geomData.depth || 1);
+                const mat = new THREE.MeshStandardMaterial({ color: 0x7eb8f7, metalness: 0.8, roughness: 0.2 });
+                group.add(new THREE.Mesh(g, mat));
             }
 
-            const material = new THREE.MeshStandardMaterial({ 
-                color: 0x7eb8f7, 
-                metalness: 0.8, 
-                roughness: 0.2,
-                wireframe: false 
-            });
-            mesh = new THREE.Mesh(geometry, material);
+            mesh = group;
             scene.add(mesh);
-            
             updateCost();
         }
 
@@ -956,27 +993,44 @@
         // --- Features ---
         document.getElementById('btn-generate').addEventListener('click', async () => {
             const btn = document.getElementById('btn-generate');
-            const prompt = document.getElementById('prompt-input').value;
-            const multiAgent = document.getElementById('multi-agent-toggle').checked;
-            
-            btn.classList.add('loading');
-            const data = await API.post('/api/ai/generate', { 
-                prompt, 
-                mode: multiAgent ? 'multi-agent' : 'standard' 
-            });
-            btn.classList.remove('loading');
+            const prompt = document.getElementById('prompt-input').value.trim();
 
-            if (data && data.geomData) {
-                buildMesh(data.geomData);
-                currentPartId = data.id;
-                if (socket) {
-                    socket.send(JSON.stringify({
-                        type: 'model:updated',
-                        userId: currentUser.id,
-                        userName: currentUser.name,
-                        geomData: data.geomData
-                    }));
+            if (!prompt) { showToast('Enter a prompt first', 'error'); return; }
+
+            btn.classList.add('loading');
+            document.getElementById('part-status').innerText = 'Generating...';
+            document.getElementById('part-status').style.background = 'var(--warning)';
+
+            try {
+                const res = await fetch(BACKEND_URL + '/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt })
+                });
+                const data = await res.json();
+
+                if (data.error) {
+                    showToast('Error: ' + data.error, 'error');
+                    document.getElementById('part-status').innerText = 'Error';
+                    document.getElementById('part-status').style.background = 'var(--error)';
+                    return;
                 }
+
+                buildCompoundMesh(data);
+                currentPartId = 'part-' + Date.now();
+
+                document.getElementById('part-status').innerText = 'Draft';
+                document.getElementById('part-status').style.background = '';
+
+                addHistory(data.name || prompt, data);
+                showToast('✓ ' + (data.name || 'Part') + ' generated');
+
+            } catch (err) {
+                showToast('Cannot reach backend at localhost:3001', 'error');
+                document.getElementById('part-status').innerText = 'Error';
+                document.getElementById('part-status').style.background = 'var(--error)';
+            } finally {
+                btn.classList.remove('loading');
             }
         });
 
@@ -1020,6 +1074,42 @@
         }
 
         document.getElementById('material-selector').addEventListener('change', updateCost);
+
+        // History
+        const historyItems = [];
+        function addHistory(name, geomData) {
+            historyItems.unshift({ name, geomData, time: new Date().toLocaleTimeString() });
+            const list = document.getElementById('history-list');
+            list.innerHTML = historyItems.map((item, i) =>
+                `<div class="chip" style="margin-bottom:6px;width:100%;text-align:left;cursor:pointer" data-idx="${i}">
+                    <strong style="font-size:0.75rem">${item.name}</strong>
+                    <span style="font-size:0.65rem;color:var(--text-muted);display:block">${item.time}</span>
+                </div>`
+            ).join('');
+            list.querySelectorAll('[data-idx]').forEach(el => {
+                el.addEventListener('click', () => {
+                    buildCompoundMesh(historyItems[+el.dataset.idx].geomData);
+                    showToast('Restored: ' + historyItems[+el.dataset.idx].name);
+                });
+            });
+        }
+
+        // Template chips — fill prompt on click
+        const TEMPLATE_PROMPTS = {
+            'Gear': 'spur gear with central bore and keyway slot',
+            'Bolt': 'hex bolt M12 with threaded shaft and washer',
+            'Bearing': 'deep groove ball bearing with inner and outer race',
+            'Bracket': 'L-shaped mounting bracket with bolt holes',
+            'Arm Joint': 'robotic arm joint with servo mount and bearing seat',
+            'Mount Plate': 'rectangular mounting plate with corner holes and center cutout'
+        };
+        document.querySelectorAll('.template-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                const t = TEMPLATE_PROMPTS[chip.innerText.trim()];
+                if (t) document.getElementById('prompt-input').value = t;
+                showToast('Template loaded — click Generate');
+            });
+        });
 
         // Parametric Sliders
         ['x', 'y', 'z'].forEach(axis => {

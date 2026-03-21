@@ -1,0 +1,13 @@
+{
+  "name": "mechagen",
+  "version": "1.0.0",
+  "description": "AI-powered 3D mechanical parts generator",
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "node --watch backend/server.js"
+  },
+  "engines": {
+    "node": ">=18.x"
+  }
+}
