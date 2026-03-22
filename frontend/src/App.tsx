@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { Component, useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { ThemeProvider } from './context/ThemeContext';
@@ -8,6 +8,40 @@ import { LandingPage } from './components/LandingPage';
 import { MainLayout } from './components/MainLayout';
 
 type AuthStep = 'landing' | 'auth';
+
+/** Avoid blank screen when a child throws — show the error text instead. */
+class RootErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div
+          style={{
+            padding: 24,
+            minHeight: '100vh',
+            fontFamily: 'system-ui, sans-serif',
+            background: '#0a0a0f',
+            color: '#f77a7a',
+          }}
+        >
+          <h1 style={{ fontSize: 18, marginBottom: 12 }}>Something broke</h1>
+          <pre style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>
+            {this.state.error.message}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function MechaGenApp() {
   const [session, setSession] = useState<Session | null>(null);
@@ -21,10 +55,15 @@ function MechaGenApp() {
       setReady(true);
       return;
     }
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session ?? null);
-      setReady(true);
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        setSession(data.session ?? null);
+        setReady(true);
+      })
+      .catch(() => {
+        setReady(true);
+      });
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, s) => {
@@ -97,10 +136,12 @@ function MechaGenApp() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <ToastProvider>
-        <MechaGenApp />
-      </ToastProvider>
-    </ThemeProvider>
+    <RootErrorBoundary>
+      <ThemeProvider>
+        <ToastProvider>
+          <MechaGenApp />
+        </ToastProvider>
+      </ThemeProvider>
+    </RootErrorBoundary>
   );
 }

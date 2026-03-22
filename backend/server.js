@@ -36,6 +36,7 @@ const http = require('http');
 const { URL }  = require('url');
 
 const generateHandler = require('./api/generate');
+const chatHandler = require('./api/ai/chat');
 
 const PORT = process.env.PORT || 3001;
 
@@ -101,6 +102,17 @@ const server = http.createServer(async (req, rawRes) => {
     return;
   }
 
+  if (url.pathname === '/api/ai/chat') {
+    try {
+      req.body = await readBody(req);
+    } catch {
+      res.status(400).json({ error: 'Invalid JSON body' });
+      return;
+    }
+    await chatHandler(req, res);
+    return;
+  }
+
   // Catch-all 404
   res.status(404).json({ error: `No route for ${req.method} ${url.pathname}` });
 });
@@ -120,5 +132,5 @@ server.on('error', (err) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[server] listening on http://127.0.0.1:${PORT}`);
-  console.log('[server] API endpoint: POST http://127.0.0.1:' + PORT + '/api/generate');
+  console.log('[server] API: POST /api/generate  POST /api/ai/chat');
 });

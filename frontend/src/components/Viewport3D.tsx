@@ -285,14 +285,22 @@ function loadStlBase64(b64: string, theme: Theme, materialKey: string): THREE.Gr
   mesh.castShadow = true;
   mesh.receiveShadow = true;
 
-  // Center and scale to fit viewport loosely
+  // Center geometry at origin and normalize scale to fit viewport
   geometry.computeBoundingBox();
   const box = geometry.boundingBox!;
   const center = new THREE.Vector3();
   box.getCenter(center);
-  const pivotY = box.min.y;
+  const size = new THREE.Vector3();
+  box.getSize(size);
 
-  mesh.position.set(-center.x, -pivotY, -center.z);
+  // Translate geometry so its center is at origin
+  geometry.translate(-center.x, -center.y, -center.z);
+
+  // Scale to fit within targetSize (CadQuery exports mm, viewport expects ~3.2 units)
+  const targetSize = 3.2;
+  const maxDim = Math.max(size.x, size.y, size.z, 0.001);
+  const sc = targetSize / maxDim;
+  geometry.scale(sc, sc, sc);
 
   const group = new THREE.Group();
   group.add(mesh);
@@ -1144,6 +1152,12 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
 
       if (!geomData) return;
 
+      // Reset camera to default position so model appears centered
+      if (cameraRef.current) {
+        cameraRef.current.position.set(5, 5, 5);
+        cameraRef.current.lookAt(0, 0, 0);
+      }
+
       // Procedural JSON from AI — render primitives only (no CadQuery / JSCAD)
       if (Array.isArray(geomData.parts) && geomData.parts.length > 0) {
         try {
@@ -1168,7 +1182,30 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
       // CadQuery pipeline returns STL; render mesh directly (code is Python, not JSCAD)
       if (geomData.stl && geomData.stl.length > 20) {
         try {
-          // For bolts: use procedural Three.js builder for much better visuals
+          // Prefer real CadQuery STL so the viewport matches the solver output.
+          // If load fails, fall back to procedural previews (bolt / gear) when prompts match.
+          let usedStl = false;
+          let stlLoadError: Error | null = null;
+          try {
+            const group = loadStlBase64(
+              geomData.stl,
+              themeRef.current,
+              materialKeyRef.current
+            );
+            group.rotation.z = 0.2;
+            group.scale.set(scale.x, scale.y, scale.z);
+            scene.add(group);
+            groupRef.current = group;
+            usedStl = true;
+          } catch (e) {
+            stlLoadError = e instanceof Error ? e : new Error(String(e));
+            console.warn('[Viewport3D] STL load failed, trying procedural fallback:', stlLoadError);
+          }
+
+          if (usedStl) {
+            return;
+          }
+
           if (
             isBoltPromptOrCode(
               geomData.code || '',
@@ -1176,7 +1213,7 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
               generationPromptRef.current
             )
           ) {
-            console.log('[Viewport3D] Bolt detected — using procedural builder');
+            console.log('[Viewport3D] Bolt — procedural fallback after STL failure');
             const boltGroup = buildBoltProcedural(
               geomData.code || '',
               themeRef.current,
@@ -1198,7 +1235,7 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
               generationPromptRef.current
             )
           ) {
-            console.log('[Viewport3D] Gear detected — using procedural helical/spur builder');
+            console.log('[Viewport3D] Gear — procedural fallback after STL failure');
             const gearGroup = buildHelicalSpurGearProcedural(
               geomData.code || '',
               generationPromptRef.current,
@@ -1216,15 +1253,9 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
             return;
           }
 
-          const group = loadStlBase64(
-            geomData.stl,
-            themeRef.current,
-            materialKeyRef.current
+          throw new Error(
+            stlLoadError?.message || 'Could not load STL mesh. Check the browser console.'
           );
-          group.rotation.z = 0.2;
-          group.scale.set(scale.x, scale.y, scale.z);
-          scene.add(group);
-          groupRef.current = group;
         } catch (err) {
           console.error('[Viewport3D] STL render failed:', err);
           setRenderError((err as Error).message || 'STL load failed');

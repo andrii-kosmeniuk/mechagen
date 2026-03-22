@@ -17,8 +17,9 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- UMD sets window.jscadModeling — do not add a second script that reads `jscadModeling`
+         (throws ReferenceError if CDN blocked/slow and blocks the whole app = white page). -->
     <script src="https://cdn.jsdelivr.net/npm/@jscad/modeling@2/dist/jscad-modeling.min.js"></script>
-    <script>window.jscadModeling = jscadModeling;</script>
     <script type="module" src="/src/Main.tsx"></script>
   </body>
 </html>

@@ -2,27 +2,30 @@
 
 const API_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
-/** Simple prompts — short CadQuery. */
-const TIMEOUT_FAST_MS = 45_000;
+/** “Simple” prompts — Nemotron often needs 30–90s+ for long CadQuery. */
+const TIMEOUT_FAST_MS = 60_000;
+/** highDetail / gear / bearing / long completions */
+const TIMEOUT_COMPLEX_MS = 180_000;
 /**
- * Long / complex prompts — Nemotron can need 30–120s+ to finish long Python.
- * Override with env MECHAGEN_AI_TIMEOUT_MS (milliseconds) if your host allows longer waits.
+ * Override all AI timeouts (ms). If unset, fast/complex/JSON use values above.
+ * Example: MECHAGEN_AI_TIMEOUT_MS=120000
  */
-const TIMEOUT_COMPLEX_MS = 120_000;
 
 /**
- * Single chat model for all calls. Override MECHAGEN_AI_MODEL if the catalog id differs
- * (some NVIDIA endpoints use a `nvidia/` prefix).
+ * Single chat model for all calls. NVIDIA ids are usually `nvidia/<name>`.
+ * Bare `nemotron-…` → HTTP 404 on integrate.api.nvidia.com.
  */
 function getChatModel() {
-  return (process.env.MECHAGEN_AI_MODEL || 'nemotron-3-super-120b-a12b').trim();
+  return (
+    process.env.MECHAGEN_AI_MODEL || 'nvidia/nemotron-3-super-120b-a12b'
+  ).trim();
 }
 
-/** Max completion tokens — long CadQuery / JSON. Override MECHAGEN_AI_MAX_TOKENS if the API errors. */
+/** Max completion tokens — long CadQuery / JSON parts. Default high; lower if NVIDIA returns max_tokens errors. */
 function getMaxOutputTokens() {
-  const v = parseInt(process.env.MECHAGEN_AI_MAX_TOKENS || '16384', 10);
+  const v = parseInt(process.env.MECHAGEN_AI_MAX_TOKENS || '32768', 10);
   if (Number.isFinite(v) && v >= 256) return Math.min(v, 131072);
-  return 16384;
+  return 32768;
 }
 
 /** User asked for a toothed gear — models often cheat with a plain ring; we inject a hard mandate. */
@@ -161,7 +164,7 @@ async function callNemotron(prompt, image, options = {}) {
     if (Number.isFinite(envOverride) && envOverride >= 10_000) {
       return envOverride;
     }
-    if (geometryParts) return 90_000;
+    if (geometryParts) return 60_000;
     if (options.highDetail || gearMandate || bearingMandate) {
       return TIMEOUT_COMPLEX_MS;
     }
@@ -186,7 +189,7 @@ async function callNemotron(prompt, image, options = {}) {
       body: JSON.stringify({
         model,
         temperature: geometryParts ? 0.15 : gearMandate || bearingMandate ? 0.12 : 0.2,
-        max_tokens: getMaxOutputTokens(),
+        max_tokens: geometryParts ? Math.min(getMaxOutputTokens(), 8192) : getMaxOutputTokens(),
         messages: [
           {
             role: 'system',
@@ -250,4 +253,100 @@ async function callNemotron(prompt, image, options = {}) {
   return code;
 }
 
-module.exports = { callNemotron };
+const COPILOT_SYSTEM_PROMPT = `You are a mechanical engineering AI co-pilot embedded in MechaGen, a 3D part design tool.
+
+Your expertise covers:
+- Mechanical design principles and best practices
+- Material selection (metals, polymers, composites)
+- Manufacturing processes (CNC machining, 3D printing, injection molding, casting)
+- Stress analysis, fatigue, and failure modes
+- Tolerancing and GD&T
+- Assembly design and fastener selection
+- Cost estimation and design-for-manufacturing optimization
+
+Keep answers concise (2-4 sentences for simple questions, up to a short paragraph for complex ones).
+When suggesting design changes, be specific about dimensions, materials, and tolerances.
+Use SI units by default.`;
+
+/**
+ * Short chat for the AI Co-Pilot sidebar (not CadQuery generation).
+ */
+async function callCopilotChat(message) {
+  const text = (message || '').trim();
+  if (!text) {
+    const e = new Error('Message is required');
+    e.status = 400;
+    throw e;
+  }
+  const apiKey = process.env.NVIDIA_API_KEY;
+  if (!apiKey) {
+    const e = new Error('NVIDIA_API_KEY is not configured');
+    e.status = 500;
+    throw e;
+  }
+  const model = getChatModel();
+  const chatTimeout = parseInt(
+    process.env.MECHAGEN_AI_CHAT_TIMEOUT_MS || '120000',
+    10
+  );
+  const timeoutMs =
+    Number.isFinite(chatTimeout) && chatTimeout >= 5000 ? chatTimeout : 120_000;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response;
+  try {
+    response = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.28,
+        max_tokens: 4096,
+        messages: [
+          { role: 'system', content: COPILOT_SYSTEM_PROMPT },
+          { role: 'user', content: text },
+        ],
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const sec = Math.round(timeoutMs / 1000);
+      const e = new Error(`Chat request timed out after ${sec} seconds`);
+      e.status = 504;
+      throw e;
+    }
+    const e = new Error(`Network error: ${err.message}`);
+    e.status = 502;
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!response.ok) {
+    let msg = `NVIDIA API error ${response.status}`;
+    try {
+      const body = await response.json();
+      if (body?.error?.message) msg = body.error.message;
+    } catch (_) { /* ignore */ }
+    const e = new Error(msg);
+    e.status = response.status >= 500 ? 502 : response.status;
+    throw e;
+  }
+
+  const data = await response.json();
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) {
+    const e = new Error('Model returned an empty reply');
+    e.status = 502;
+    throw e;
+  }
+  return content.trim();
+}
+
+module.exports = { callNemotron, callCopilotChat };

@@ -1,7 +1,7 @@
 'use strict';
 
 const MIN_PROMPT = 3;
-const MAX_PROMPT = 2000;
+const MAX_PROMPT = 8000;
 const MAX_CONTEXT = 6000;
 const MAX_PROJECT_NAME = 200;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB base64 limit
@@ -48,6 +48,15 @@ function sanitizeRequest(body) {
     highDetailFlag = highDetail;
   }
 
+  let proceduralPartsFlag = false;
+  const { proceduralParts } = body;
+  if (proceduralParts !== undefined && proceduralParts !== null) {
+    if (typeof proceduralParts !== 'boolean') {
+      return { error: 'proceduralParts must be a boolean', status: 400 };
+    }
+    proceduralPartsFlag = proceduralParts;
+  }
+
   let contextStr = null;
   if (context !== undefined && context !== null) {
     if (typeof context !== 'string') {
@@ -92,6 +101,7 @@ function sanitizeRequest(body) {
       prompt: hasPrompt ? prompt.trim() : null,
       image:  hasImage  ? image.trim()  : null,
       highDetail: highDetailFlag,
+      proceduralParts: proceduralPartsFlag,
       context: contextStr,
       projectName: projectNameStr,
     }

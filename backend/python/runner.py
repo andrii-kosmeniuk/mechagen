@@ -562,28 +562,50 @@ def run_cadquery():
 
     global_env['show_object'] = show_object
 
-    try:
+    def _exec_and_get_model(src):
+        nonlocal final_model
+        final_model = None
         _patch_cq_union_cut_chain()
-        f_stdout = io.StringIO()
-        f_stderr = io.StringIO()
-        with redirect_stdout(f_stdout), redirect_stderr(f_stderr):
-            exec(code, global_env)
+        local_env = dict(global_env)
+        local_env['show_object'] = show_object
+        f_out = io.StringIO()
+        f_err = io.StringIO()
+        with redirect_stdout(f_out), redirect_stderr(f_err):
+            exec(src, local_env)
 
         if final_model is not None:
-            model = final_model
-        elif 'result' in global_env and getattr(global_env['result'], 'val', None) or hasattr(global_env.get('result'), 'exportStl'):
-            model = global_env['result']
-        else:
-            candidates = [v for k, v in global_env.items() if isinstance(v, (cq.Workplane, cq.Assembly, cq.Shape))]
-            if not candidates:
-                print("Error: The script ran successfully but no CadQuery Workplane/Assembly was assigned to 'result' or passed to show_object().", file=sys.stderr)
-                sys.exit(1)
-            model = candidates[-1]
+            return final_model
+        if 'result' in local_env and (getattr(local_env['result'], 'val', None) or hasattr(local_env.get('result'), 'exportStl')):
+            return local_env['result']
+        candidates = [v for k, v in local_env.items() if isinstance(v, (cq.Workplane, cq.Assembly, cq.Shape))]
+        if not candidates:
+            raise RuntimeError("No CadQuery Workplane/Assembly assigned to 'result' or show_object().")
+        return candidates[-1]
 
+    try:
+        model = _exec_and_get_model(code)
+    except Exception as first_err:
+        first_tb = traceback.format_exc()
+        err_lower = str(first_err).lower()
+        retryable = any(kw in err_lower for kw in (
+            "chamfer", "fillet", "brep_api", "command not done", "null shape",
+        ))
+        if retryable:
+            print(f"[runner] First attempt failed ({first_err}), retrying without chamfer/fillet…", file=sys.stderr)
+            stripped = _strip_cq_finish_ops(code)
+            try:
+                model = _exec_and_get_model(stripped)
+            except Exception:
+                print(first_tb, file=sys.stderr)
+                sys.exit(1)
+        else:
+            print(first_tb, file=sys.stderr)
+            sys.exit(1)
+
+    try:
         tol, ang = _export_tolerances()
         cq.exporters.export(model, out_path, tolerance=tol, angularTolerance=ang)
         print("SUCCESS")
-
     except Exception:
         traceback.print_exc(file=sys.stderr)
         sys.exit(1)

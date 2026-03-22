@@ -38,6 +38,17 @@ loadEnvFile(join(backendDir, '.env'));
 // Import backend modules using CJS require
 const require = createRequire(import.meta.url);
 const { executeGenerate } = require(join(backendDir, 'lib', 'executeGenerate.js'));
+const { callCopilotChat } = require(join(backendDir, 'lib', 'ai.js'));
+
+const LOG = '[mechagen-api]';
+const PLUGIN_VERSION = 2;
+
+/** Pathname only — req.url can include ?query */
+function apiPath(url) {
+  if (!url) return '';
+  const q = url.indexOf('?');
+  return q === -1 ? url : url.slice(0, q);
+}
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -63,9 +74,28 @@ export default function apiPlugin() {
   return {
     name: 'mechagen-api',
     configureServer(server) {
+      // Same process as Vite — all backend console.log/error goes to THIS terminal.
+      console.log(
+        `\n${LOG} plugin v${PLUGIN_VERSION} — POST /api/ai/chat uses NVIDIA (callCopilotChat). If the UI says "not configured yet", restart \`npm run dev\` and pull latest code.\n` +
+          `${LOG} Backend runs inside Vite — logs: [executeGenerate], [AI], [mechagen-api].\n` +
+          `${LOG} GET http://localhost:PORT/api/health to verify this plugin is active.\n`
+      );
+
       server.middlewares.use(async (req, res, next) => {
         // Only handle /api routes
         if (!req.url?.startsWith('/api/')) return next();
+
+        const path = apiPath(req.url);
+
+        if (req.method === 'GET' && path === '/api/health') {
+          return sendJson(res, 200, {
+            ok: true,
+            plugin: 'mechagen-vite-api',
+            version: PLUGIN_VERSION,
+            chat: 'callCopilotChat',
+            backendDir,
+          });
+        }
 
         // CORS preflight
         if (req.method === 'OPTIONS') {
@@ -79,13 +109,24 @@ export default function apiPlugin() {
         }
 
         // POST /api/generate
-        if (req.url === '/api/generate' && req.method === 'POST') {
+        if (path === '/api/generate' && req.method === 'POST') {
           let body;
           try { body = await readBody(req); }
           catch { return sendJson(res, 400, { error: 'Invalid JSON body' }); }
 
+          const t0 = Date.now();
+          const promptPreview = (body?.prompt || '').toString().replace(/\s+/g, ' ').slice(0, 100);
+          console.log(`${LOG} POST /api/generate start — prompt: "${promptPreview}${promptPreview.length >= 100 ? '…' : ''}"`);
+
           try {
             const out = await executeGenerate(body);
+            const stlLen = typeof out.stl === 'string' ? out.stl.length : 0;
+            const codeLen = typeof out.code === 'string' ? out.code.length : 0;
+            const nParts = Array.isArray(out.parts) ? out.parts.length : 0;
+            const ms = Date.now() - t0;
+            console.log(
+              `${LOG} POST /api/generate OK in ${ms}ms — stlB64=${stlLen} codeChars=${codeLen} parts=${nParts}`
+            );
             return sendJson(res, 200, {
               stl: out.stl,
               code: out.code,
@@ -96,25 +137,42 @@ export default function apiPlugin() {
             });
           } catch (err) {
             const status = err.status ?? 500;
-            console.error('[api/generate]', err.message);
+            const ms = Date.now() - t0;
+            console.error(`${LOG} POST /api/generate FAIL in ${ms}ms (${status}):`, err.message);
+            if (err.stack) console.error(err.stack);
             return sendJson(res, status, { error: err.message });
           }
         }
 
         // /api/projects/* — return empty array (stub)
-        if (req.url?.startsWith('/api/projects/')) {
+        if (path.startsWith('/api/projects/')) {
           return sendJson(res, 200, []);
         }
 
-        // /api/ai/chat — stub
-        if (req.url === '/api/ai/chat' && req.method === 'POST') {
+        // POST /api/ai/chat — engineering co-pilot (NVIDIA chat completions)
+        if (path === '/api/ai/chat' && req.method === 'POST') {
           let body;
           try { body = await readBody(req); }
           catch { return sendJson(res, 400, { error: 'Invalid JSON body' }); }
-          return sendJson(res, 200, { reply: 'AI chat is not configured yet.' });
+          const msg = body?.message;
+          if (!msg || typeof msg !== 'string' || !msg.trim()) {
+            return sendJson(res, 400, { error: 'Message is required' });
+          }
+          const ct0 = Date.now();
+          console.log(`${LOG} POST /api/ai/chat — "${String(msg).slice(0, 80)}${String(msg).length > 80 ? '…' : ''}"`);
+          try {
+            const reply = await callCopilotChat(msg.trim());
+            console.log(`${LOG} POST /api/ai/chat OK in ${Date.now() - ct0}ms`);
+            return sendJson(res, 200, { reply });
+          } catch (err) {
+            const st = Number(err.status);
+            const status = st >= 400 && st < 600 ? st : 500;
+            console.error(`${LOG} POST /api/ai/chat FAIL in ${Date.now() - ct0}ms:`, err.message);
+            return sendJson(res, status, { error: err.message || 'Chat failed' });
+          }
         }
         // /api/ai/improve-prompt — stub that returns the prompt unchanged
-        if (req.url === '/api/ai/improve-prompt' && req.method === 'POST') {
+        if (path === '/api/ai/improve-prompt' && req.method === 'POST') {
           let body;
           try { body = await readBody(req); }
           catch { return sendJson(res, 400, { error: 'Invalid JSON body' }); }
@@ -123,7 +181,7 @@ export default function apiPlugin() {
           });
         }
 
-        return sendJson(res, 404, { error: `No API route: ${req.method} ${req.url}` });
+        return sendJson(res, 404, { error: `No API route: ${req.method} ${path}` });
 
       });
     },

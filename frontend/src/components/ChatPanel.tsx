@@ -24,10 +24,20 @@ export function ChatPanel() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text }),
       });
-      const data = await res.json() as { reply?: string };
+      const data = (await res.json()) as { reply?: string; error?: string };
+      if (!res.ok) {
+        setMessages((m) => [
+          ...m,
+          {
+            role: 'ai',
+            text: data.error || `Chat error (${res.status}). Check backend .env (NVIDIA_API_KEY).`,
+          },
+        ]);
+        return;
+      }
       setMessages((m) => [...m, { role: 'ai', text: data.reply || 'No response.' }]);
     } catch {
-      setMessages((m) => [...m, { role: 'ai', text: 'Error reaching AI. Is the backend running?' }]);
+      setMessages((m) => [...m, { role: 'ai', text: 'Error reaching AI. Is the dev server running?' }]);
     } finally {
       setLoading(false);
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);

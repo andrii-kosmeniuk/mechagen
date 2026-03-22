@@ -53,11 +53,12 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
   const [historyParts, setHistoryParts] = useState<HistoryPart[]>([]);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
-  const [highDetail, setHighDetail] = useState(true);
+  /** Off by default — faster AI + CadQuery; turn on for finer threads/chamfers. */
+  const [highDetail, setHighDetail] = useState(false);
   /** When on, backend skips CadQuery and returns JSON primitives (threads/knurl as stacked parts). */
-  const [proceduralParts, setProceduralParts] = useState(false);
-  /** When on, run improve-prompt before each generate (same as ✨ Polish, but automatic). */
-  const [polishBeforeGenerate, setPolishBeforeGenerate] = useState(true);
+  const [proceduralParts, setProceduralParts] = useState(true);
+  /** When on, run improve-prompt before each generate (same as ✨ Polish, but automatic). Slow — off by default. */
+  const [polishBeforeGenerate, setPolishBeforeGenerate] = useState(false);
   const currentProjectId = 'default-project';
 
   const initRealtime = useCallback(() => {
@@ -156,6 +157,20 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
     loadHistory();
   }, [loadHistory]);
 
+  /** Elapsed seconds while generating — AI + CadQuery can take several minutes. */
+  const [genElapsedSec, setGenElapsedSec] = useState(0);
+  useEffect(() => {
+    if (!generating) {
+      setGenElapsedSec(0);
+      return;
+    }
+    const t0 = Date.now();
+    const id = setInterval(() => {
+      setGenElapsedSec(Math.floor((Date.now() - t0) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [generating]);
+
   const onGenerate = async () => {
     if (!prompt.trim()) {
       showToast('Please enter a prompt first', 'error');
@@ -179,7 +194,9 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
         }
       }
       console.log('[Generate] Sending prompt:', sendPrompt);
-      // Direct fetch — bypasses api helper to avoid silent failures
+      // Direct fetch — bypasses api helper to avoid silent failures.
+      // Must exceed backend timeout (AI ~3 min + CadQuery ~3 min) so we don't abort before the server does.
+      const GENERATE_TIMEOUT_MS = 8 * 60 * 1000;
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -190,6 +207,7 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
           context: projectDesc.trim() || undefined,
           projectName: projectName.trim() || undefined,
         }),
+        signal: AbortSignal.timeout(GENERATE_TIMEOUT_MS),
       });
       console.log('[Generate] Response status:', res.status);
       const text = await res.text();
@@ -206,7 +224,7 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
 
       const hasStl = typeof data.stl === 'string' && data.stl.length > 50;
       const okCode =
-        typeof data.code === 'string' && data.code.trim().length >= 30;
+        typeof data.code === 'string' && data.code.trim().length >= 15;
       const hasParts =
         Array.isArray((data as { parts?: unknown }).parts) &&
         (data as { parts: unknown[] }).parts.length > 0;
@@ -240,7 +258,11 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
             : '✓ Generated!'
       );
     } catch (e) {
-      const msg = (e as Error).message || 'Unknown error';
+      const err = e as Error & { name?: string };
+      let msg = err.message || 'Unknown error';
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+        msg = 'Request timed out. Try a shorter prompt or turn off High detail.';
+      }
       console.error('[Generate] FAILED:', msg);
       setGenError(msg);
       showToast(`Generation failed: ${msg}`, 'error');
@@ -367,11 +389,22 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
               transform: 'translate(-50%,-50%)',
               background: 'rgba(5,5,13,0.88)', border: '1px solid var(--border)',
               borderRadius: 10, padding: '16px 24px', color: 'var(--accent-blue)',
-              fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 10,
-              pointerEvents: 'none',
+              fontSize: '0.85rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+              pointerEvents: 'none', maxWidth: 'min(420px, 90vw)', textAlign: 'center',
             }}>
-              <span style={{ animation: 'spin 0.8s linear infinite', display: 'inline-block' }}>⚙️</span>
-              Generating 3D model…
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ animation: 'spin 0.8s linear infinite', display: 'inline-block' }}>⚙️</span>
+                <span>
+                  Generating 3D model…{' '}
+                  <span style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+                    {Math.floor(genElapsedSec / 60)}:{String(genElapsedSec % 60).padStart(2, '0')}
+                  </span>
+                </span>
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                Nemotron + CadQuery often need <strong>1–6 minutes</strong> for detailed bolts.
+                Shorten the prompt or turn off <strong>High detail</strong> for faster runs.
+              </div>
             </div>
           )}
           {genError && !generating && (

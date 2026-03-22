@@ -143,10 +143,12 @@ async function executeGenerate(body) {
   const modelPrompt = buildModelPrompt(input);
 
   if (input.proceduralParts) {
+    console.log('[executeGenerate] procedural JSON parts — calling AI…');
     const raw = await callNemotron(modelPrompt, input.image, {
       highDetail: input.highDetail,
       geometryParts: true,
     });
+    console.log('[executeGenerate] AI returned JSON parts, length=', raw.length);
     const { name, parts, description, dimensions } = parseGeomPartsJson(raw);
     return {
       code: JSON.stringify(
@@ -161,15 +163,23 @@ async function executeGenerate(body) {
     };
   }
 
+  console.log('[executeGenerate] CadQuery path — calling AI…');
   const raw = await callNemotron(modelPrompt, input.image, {
     highDetail: input.highDetail,
   });
+  console.log('[executeGenerate] AI returned Python, length=', raw.length, '— running CadQuery…');
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mechagen-'));
   const stlPath = path.join(tmpDir, 'output.stl');
   const runnerPath = path.join(__dirname, '..', 'python', 'runner.py');
 
-  const runTimeout = input.highDetail ? 180_000 : 90_000;
+  const pyOverride = parseInt(process.env.MECHAGEN_PYTHON_TIMEOUT_MS || '', 10);
+  const runTimeout =
+    Number.isFinite(pyOverride) && pyOverride >= 3_000
+      ? pyOverride
+      : input.highDetail
+        ? 180_000
+        : 90_000;
 
   // Bolts, brackets, plates: keep chamfer/fillet (low union count, OCCT handles fine).
   // Bearings, gears: strip (complex unions break OCCT booleans on finish ops).
@@ -192,6 +202,7 @@ async function executeGenerate(body) {
     });
     const stlBuffer = fs.readFileSync(stlPath);
     const stl = stlBuffer.toString('base64');
+    console.log('[executeGenerate] CadQuery OK, STL bytes=', stlBuffer.length);
     return { stl, code: raw, name: undefined, parts: undefined };
   } catch (err) {
     const stderr = err.stderr ? err.stderr.toString() : '';

@@ -1,19 +1,4 @@
-const { callAI } = require('../../services/gemini');
-
-const SYSTEM_PROMPT = `You are a mechanical engineering AI co-pilot embedded in MechaGen, a 3D part design tool.
-
-Your expertise covers:
-- Mechanical design principles and best practices
-- Material selection (metals, polymers, composites)
-- Manufacturing processes (CNC machining, 3D printing, injection molding, casting)
-- Stress analysis, fatigue, and failure modes
-- Tolerancing and GD&T
-- Assembly design and fastener selection
-- Cost estimation and design-for-manufacturing optimization
-
-Keep answers concise (2-4 sentences for simple questions, up to a short paragraph for complex ones).
-When suggesting design changes, be specific about dimensions, materials, and tolerances.
-Use SI units by default.`;
+const { callCopilotChat } = require('../../lib/ai');
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -28,10 +13,12 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const reply = await callAI(SYSTEM_PROMPT, message.trim());
+    const reply = await callCopilotChat(message.trim());
     return res.status(200).json({ reply });
   } catch (e) {
+    const st = Number(e.status);
+    const status = st >= 400 && st < 600 ? st : 500;
     console.error('[chat] Error:', e.message);
-    return res.status(500).json({ error: 'Chat failed: ' + e.message });
+    return res.status(status).json({ error: e.message || 'Chat failed' });
   }
 };
