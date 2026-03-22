@@ -14,6 +14,7 @@ import type { GeomData, GeomPart } from '../types';
 // ── Types ────────────────────────────────────────────────────────────
 export type Viewport3DHandle = {
   getCameraPosition: () => THREE.Vector3 | null;
+  getExportRoot: () => THREE.Object3D | null;
 };
 
 type Props = {
@@ -23,6 +24,8 @@ type Props = {
   /** Viewport PBR preset — keys match MATERIALS_DB in constants */
   materialKey?: string;
   wireframe?: boolean;
+  /** Toggles wireframe from the bottom viewport toolbar */
+  onToggleWireframe?: () => void;
   /** 0–1 mesh opacity (1 = solid) */
   modelOpacity?: number;
   /** Last generate prompt — used to parse tooth count / keyway for procedural gear */
@@ -927,6 +930,7 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
         theme,
         materialKey = 'aluminum',
         wireframe = false,
+        onToggleWireframe,
         modelOpacity = 1,
         generationPrompt = '',
       },
@@ -959,6 +963,7 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
 
     useImperativeHandle(ref, () => ({
       getCameraPosition: () => cameraRef.current?.position.clone() ?? null,
+      getExportRoot: () => groupRef.current ?? null,
     }));
 
     // ── Scene setup ──────────────────────────────────────────────────
@@ -1363,10 +1368,12 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
       background: '#12121c',
       border: '1px solid #1e1e2e',
       borderRadius: 6,
-      padding: '6px 14px',
+      padding: '6px 10px',
       fontFamily: "'IBM Plex Mono', monospace",
-      fontSize: 11,
+      fontSize: 10,
       cursor: 'pointer',
+      whiteSpace: 'nowrap',
+      flexShrink: 0,
     };
 
     return (
@@ -1418,13 +1425,28 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
         <div style={{
           position: 'absolute', bottom: 60, left: '50%',
           transform: 'translateX(-50%)',
-          display: 'flex', gap: 8, zIndex: 10,
+          display: 'flex', gap: 6, zIndex: 10,
+          maxWidth: 'min(90vw, 760px)',
+          overflowX: 'auto',
+          paddingBottom: 2,
         }}>
           <button onClick={handleSpin} style={{ ...btnStyle, color: '#7eb8f7' }}>
             {autoSpin ? '⏹ Stop' : '▶ Auto Spin'}
           </button>
           <button onClick={handleExplode} style={{ ...btnStyle, color: '#f97316' }}>
             {exploded ? '🔧 Assemble' : '💥 Explode'}
+          </button>
+          <button
+            onClick={() => onToggleWireframe?.()}
+            title={wireframe ? 'Show shaded solid' : 'Show wireframe'}
+            style={{
+              ...btnStyle,
+              color: wireframe ? '#c4b5fd' : '#a78bfa',
+              borderColor: wireframe ? 'rgba(167,139,250,0.45)' : 'rgba(167,139,250,0.28)',
+              background: wireframe ? 'rgba(139,92,246,0.12)' : '#12121c',
+            }}
+          >
+            {wireframe ? '◇ Solid' : '▢ Wireframe'}
           </button>
           <button onClick={handleReset} style={{ ...btnStyle, color: '#5ab85a' }}>
             ↺ Reset View

@@ -9,6 +9,16 @@ import { createApi } from '../lib/api';
 import { useToast } from '../context/ToastContext';
 import { useTheme } from '../context/ThemeContext';
 import type { AppUser, GeomData, HistoryPart } from '../types';
+import {
+  downloadStlFromBase64,
+  sanitizeExportBasename,
+  triggerDownload,
+} from '../lib/downloadBlob';
+import {
+  exportMeshToGlbBlob,
+  exportMeshToObjBlob,
+  exportMeshToStlBlob,
+} from '../lib/exportMesh';
 
 type Props = {
   session: Session;
@@ -312,6 +322,77 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
     }
   };
 
+  const onExportFormat = useCallback(
+    async (format: 'STL' | 'STEP' | 'OBJ' | 'GLTF') => {
+      const base = sanitizeExportBasename(projectName || 'part');
+      if (!geomData) {
+        showToast('Nothing to export — generate a part first.', 'error');
+        return;
+      }
+      if (format === 'STEP') {
+        showToast(
+          'STEP export needs a CAD kernel. Download STL, then export STEP from FreeCAD, Fusion, or SolidWorks.',
+          'info'
+        );
+        return;
+      }
+
+      const waitForExportRoot = async () => {
+        for (let i = 0; i < 16; i++) {
+          const r = viewportRef.current?.getExportRoot() ?? null;
+          if (r) return r;
+          await new Promise<void>((res) => requestAnimationFrame(() => res()));
+        }
+        return null;
+      };
+
+      try {
+        if (format === 'STL') {
+          const stl = geomData.stl;
+          if (typeof stl === 'string' && stl.length > 50) {
+            downloadStlFromBase64(stl, `${base}.stl`);
+            showToast('STL downloaded — check your Downloads folder', 'success');
+            return;
+          }
+          const root = await waitForExportRoot();
+          if (!root) {
+            showToast(
+              'No mesh to export yet — wait for the viewport to finish, then try again.',
+              'error'
+            );
+            return;
+          }
+          const blob = await exportMeshToStlBlob(root);
+          triggerDownload(blob, `${base}.stl`);
+          showToast('STL downloaded — check your Downloads folder', 'success');
+          return;
+        }
+
+        const root = await waitForExportRoot();
+        if (!root) {
+          showToast(
+            'No mesh in viewport yet — wait for the model to appear, then try again.',
+            'error'
+          );
+          return;
+        }
+        if (format === 'OBJ') {
+          const blob = await exportMeshToObjBlob(root);
+          triggerDownload(blob, `${base}.obj`);
+          showToast('OBJ downloaded — check your Downloads folder', 'success');
+        } else {
+          const blob = await exportMeshToGlbBlob(root);
+          triggerDownload(blob, `${base}.glb`);
+          showToast('glTF (.glb) downloaded — check your Downloads folder', 'success');
+        }
+      } catch (e) {
+        console.error('[export]', e);
+        showToast((e as Error).message || 'Export failed', 'error');
+      }
+    },
+    [geomData, projectName, showToast]
+  );
+
   const [cadCmd, setCadCmd] = useState('');
 
   return (
@@ -349,6 +430,8 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
             setCurrentPartId(p.id);
             setGeomData(p.geomData);
           }}
+          geomData={geomData}
+          onExportFormat={onExportFormat}
         />
 
         <main className="viewport-container" style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
@@ -359,6 +442,7 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
             theme={theme}
             materialKey={materialKey}
             wireframe={wireframe}
+            onToggleWireframe={() => setWireframe((w) => !w)}
             modelOpacity={modelOpacity}
             generationPrompt={prompt}
           />

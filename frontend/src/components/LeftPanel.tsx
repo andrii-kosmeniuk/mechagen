@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import type { HistoryPart } from '../types';
+import type { GeomData, HistoryPart } from '../types';
 
 const QUICK_TEMPLATES = [
   'Gear',
@@ -37,6 +37,8 @@ export type LeftPanelProps = {
   qrDataUrl: string | null;
   historyParts: HistoryPart[];
   onSelectHistoryPart: (p: HistoryPart) => void;
+  geomData: GeomData | null;
+  onExportFormat: (format: 'STL' | 'STEP' | 'OBJ' | 'GLTF') => void | Promise<void>;
 };
 
 export function LeftPanel(props: LeftPanelProps) {
@@ -422,8 +424,30 @@ export function LeftPanel(props: LeftPanelProps) {
         {page === 'export' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={s.sectionTitle}>Export</div>
-            {['STL', 'STEP', 'OBJ', 'GLTF'].map((fmt) => (
-              <button key={fmt} type="button" style={s.btnGhost}>
+            {!props.geomData && (
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                Generate a part first, then download.
+              </div>
+            )}
+            {(['STL', 'STEP', 'OBJ', 'GLTF'] as const).map((fmt) => (
+              <button
+                key={fmt}
+                type="button"
+                style={{
+                  ...s.btnGhost,
+                  opacity: props.geomData ? 1 : 0.45,
+                  cursor: 'pointer',
+                }}
+                aria-disabled={!props.geomData}
+                title={
+                  !props.geomData
+                    ? 'Generate a part in Design first'
+                    : fmt === 'STEP'
+                      ? 'Browser cannot write STEP — see message after click'
+                      : `Download ${fmt}`
+                }
+                onClick={() => void props.onExportFormat(fmt)}
+              >
                 ↓ {fmt}
               </button>
             ))}
