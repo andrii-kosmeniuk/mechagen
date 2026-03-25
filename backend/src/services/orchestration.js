@@ -3,9 +3,13 @@
 /**
  * Generation Orchestration Service.
  *
+ * Refactored: in-memory jobStore replaced with generationRepo
+ * (JSON-file backed persistence — survives restarts).
+ *
  * Phase 2: adds analyzing_blueprint stage (Stage 1b).
  * Pipeline: Prompt → [Blueprint Analysis] → Spec → Constraint → Plan → Build → Validate → Repair → Ready
  */
+
 
 const { callNemotron } = require('../../lib/ai');
 const {
@@ -23,28 +27,25 @@ const { buildPreviewFromPlan } = require('./previewBuilder');
 const { analyzeBlueprintById, mergeBlueprintHintsIntoContext } = require('./blueprintAnalysis');
 const { linkBlueprintToGeneration } = require('./blueprintService');
 
-/** In-memory job store. @type {Map<string, object>} */
-const jobStore = new Map();
+/** Persistent generation store — replaces the in-memory Map. */
+const repo = require('../repositories/generationRepo');
 
 function genId() {
   return `gen_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function getGeneration(id) {
-  return jobStore.get(id) ?? null;
+  return repo.get(id);
 }
 
 function updateGeneration(id, updates) {
-  const existing = jobStore.get(id) || {};
-  jobStore.set(id, { ...existing, ...updates, updatedAt: new Date().toISOString() });
-  return jobStore.get(id);
+  return repo.update(id, updates);
 }
 
 function listGenerations() {
-  return Array.from(jobStore.values()).sort(
-    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-  );
+  return repo.list();
 }
+
 
 async function callAiForJson(systemPromptOverride, userMessage, options = {}) {
   const combinedPrompt = `SYSTEM INSTRUCTIONS:\n${systemPromptOverride}\n\n---\n\n${userMessage}`;
@@ -119,7 +120,7 @@ function startGeneration(input) {
     createdAt:          now,
     updatedAt:          now,
   };
-  jobStore.set(id, record);
+  repo.set(id, record);
 
   runPipeline(id, input).catch((err) => {
     console.error(`[pipeline] unhandled error for ${id}:`, err.message);
