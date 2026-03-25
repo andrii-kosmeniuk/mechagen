@@ -5,9 +5,11 @@ import { Viewport3D, type Viewport3DHandle } from './Viewport3D';
 import { TopBar } from './TopBar';
 import { LeftPanel } from './LeftPanel';
 import { ChatPanel } from './ChatPanel';
+import { PipelineStatusBadge } from './PipelineStatusBadge';
 import { createApi } from '../lib/api';
 import { useToast } from '../context/ToastContext';
 import { useTheme } from '../context/ThemeContext';
+import { usePipeline } from '../lib/usePipeline';
 import type { AppUser, GeomData, HistoryPart } from '../types';
 import {
   downloadStlFromBase64,
@@ -19,6 +21,7 @@ import {
   exportMeshToObjBlob,
   exportMeshToStlBlob,
 } from '../lib/exportMesh';
+import { looksLikeAssistantReply } from '../lib/designPrompt';
 
 type Props = {
   session: Session;
@@ -70,6 +73,37 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
   /** When on, run improve-prompt before each generate (same as ✨ Polish, but automatic). Slow — off by default. */
   const [polishBeforeGenerate, setPolishBeforeGenerate] = useState(false);
   const currentProjectId = 'default-project';
+
+  // ─── Pipeline (new structured flow) ──────────────────────────────────────────
+  const pipeline = usePipeline();
+
+  // When pipeline produces preview parts, show them in the viewport
+  useEffect(() => {
+    if (
+      pipeline.generation?.status === 'ready' &&
+      pipeline.generation.previewParts &&
+      pipeline.generation.previewParts.length > 0
+    ) {
+      setGeomData({
+        code: '',
+        name: pipeline.generation.specJson?.partType?.replace(/_/g, ' ') ?? 'Pipeline Part',
+        parts: pipeline.generation.previewParts,
+        dimensions: pipeline.generation.geometryPlan
+          ? {
+              x: Number((pipeline.generation.geometryPlan as Record<string, unknown>).boundingBox
+                ? ((pipeline.generation.geometryPlan as Record<string, { x?: number }>).boundingBox)?.x ?? 0 : 0),
+              y: Number((pipeline.generation.geometryPlan as Record<string, unknown>).boundingBox
+                ? ((pipeline.generation.geometryPlan as Record<string, { y?: number }>).boundingBox)?.y ?? 0 : 0),
+              z: Number((pipeline.generation.geometryPlan as Record<string, unknown>).boundingBox
+                ? ((pipeline.generation.geometryPlan as Record<string, { z?: number }>).boundingBox)?.z ?? 0 : 0),
+            }
+          : undefined,
+      });
+      setCurrentPartId(pipeline.generation.id);
+      showToast(`✅ Pipeline complete — ${pipeline.generation.previewParts.length} primitives`);
+    }
+  }, [pipeline.generation?.status, pipeline.generation?.id]);
+
 
   const initRealtime = useCallback(() => {
     const wsUrl = import.meta.env.VITE_WS_URL as string | undefined;
@@ -198,10 +232,17 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
             { prompt: sendPrompt }
           );
           const imp = polished?.improvedPrompt?.trim();
-          if (imp) sendPrompt = imp;
+          if (imp && !looksLikeAssistantReply(imp)) sendPrompt = imp;
         } catch {
           /* keep original prompt */
         }
+      }
+      if (looksLikeAssistantReply(sendPrompt)) {
+        showToast(
+          'That text looks like a chat reply, not a part description. Use the prompt box for CAD specs (e.g. M8 hex bolt).',
+          'error'
+        );
+        return;
       }
       console.log('[Generate] Sending prompt:', sendPrompt);
       // Direct fetch — bypasses api helper to avoid silent failures.
@@ -288,7 +329,15 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
         { prompt }
       );
       if (data?.improvedPrompt) {
-        setPrompt(data.improvedPrompt);
+        const imp = data.improvedPrompt.trim();
+        if (looksLikeAssistantReply(imp)) {
+          showToast(
+            'Polish returned a chat-style message; your prompt was left unchanged.',
+            'info'
+          );
+          return;
+        }
+        setPrompt(imp);
         showToast('Prompt optimized by AI');
       }
     } catch {
@@ -432,6 +481,13 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
           }}
           geomData={geomData}
           onExportFormat={onExportFormat}
+          // Pipeline
+          pipelineGeneration={pipeline.generation}
+          pipelineGenerating={pipeline.generating}
+          pipelineRepairing={pipeline.repairing}
+          pipelineError={pipeline.error}
+          onPipelineGenerate={pipeline.generate}
+          onPipelineRepair={pipeline.repair}
         />
 
         <main className="viewport-container" style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
@@ -462,8 +518,11 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
           </div>
 
           {/* Status badge top-left */}
-          <div style={{ position: 'absolute', top: 10, left: 12, pointerEvents: 'none' }}>
+          <div style={{ position: 'absolute', top: 10, left: 12, display: 'flex', alignItems: 'center', gap: 8, pointerEvents: 'none' }}>
             <div className="status-badge">DRAFT</div>
+            {pipeline.generating && (
+              <PipelineStatusBadge status={pipeline.generation?.status ?? 'queued'} small />
+            )}
           </div>
 
           {/* Generation overlay */}
