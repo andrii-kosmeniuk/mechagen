@@ -47,6 +47,28 @@ const { statusHandler: exportStatusHandler, objHandler: exportObjHandler, glbHan
 const { projectHistoryHandler, generationTimelineHandler } = require('./src/api/historyHandler');
 // Phase 3
 const { solidStartHandler, solidStatusHandler } = require('./src/api/solidBuildHandler');
+// Phase 4
+const { authMiddleware }  = require('./src/middleware/auth');
+const { rateLimitMiddleware } = require('./src/middleware/rateLimiter');
+const { planGate }        = require('./src/middleware/planGate');
+const { listPlans, getMyPlan, setMyPlan } = require('./src/api/planHandler');
+const { getMyUsage, getMyUsageEvents, getWorkspaceUsage } = require('./src/api/usageHandler');
+const { listMyWorkspaces, createWorkspace, getWorkspace, updateWorkspace, deleteWorkspace,
+        listMembers, addMember, updateMemberRole, removeMember } = require('./src/api/workspaceHandler');
+const { getMetrics, getCredits, setUserPlanAdmin, addUserCredits, listSubscriptions } = require('./src/api/adminHandler');
+const { requireAdmin }    = require('./src/middleware/auth');
+// Phase 5
+const { getOnboarding, advanceStep, completeOnboarding, skipOnboarding } = require('./src/api/onboardingHandler');
+const { trackEvent, getSummary: getAnalyticsSummaryH, getRecent: getAnalyticsRecentH } = require('./src/api/analyticsHandler');
+const { submitWaitlist, checkWaitlistStatus, getAdminWaitlist } = require('./src/api/waitlistHandler');
+const { submitFeedbackHandler, getAdminFeedback, updateFeedbackStatusHandler } = require('./src/api/feedbackHandler');
+const { getDemoProjectHandler, getDemoGenerationsHandler, getDemoBlueprintHandler, resetDemoHandler } = require('./src/api/demoHandler');
+const { getLaunchSummaryHandler, getOnboardingFunnelHandler, getAnalyticsSummaryHandler } = require('./src/api/launchAdminHandler');
+
+// ── Seed on startup ────────────────────────────────────────────────────────────
+require('./seed/plans')();
+require('./seed/workspaces')();
+require('./seed/demo')();
 
 const PORT = process.env.PORT || 3001;
 
@@ -73,6 +95,7 @@ function makeRes(rawRes) {
     _headers: {},
     status(code) { res._status = code; return res; },
     setHeader(k, v) { res._headers[k] = v; return res; },
+    set(k, v) { res._headers[k] = v; return res; },   // Express compat
     end() {
       rawRes.writeHead(res._status, res._headers);
       rawRes.end();
@@ -90,10 +113,10 @@ const server = http.createServer(async (req, rawRes) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const res = makeRes(rawRes);
 
-  // CORS preflight for all routes
+  // CORS — include Phase 4 headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-API-Key,Authorization');
 
   if (req.method === 'OPTIONS') {
     rawRes.writeHead(204, res._headers);
@@ -237,8 +260,188 @@ const server = http.createServer(async (req, rawRes) => {
 
   // GET /api/health
   if (url.pathname === '/api/health') {
-    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.status(200).json({ status: 'ok', version: 'phase4', timestamp: new Date().toISOString() });
     return;
+  }
+
+  // ── Phase 4: Plan & Usage routes ─────────────────────────────────────────
+  // Helper: run through middleware chain then handler
+  async function runChain(middlewares, handler) {
+    let i = 0;
+    const next = async (err) => {
+      if (err) { res.status(err.status || 500).json({ error: err.message, code: err.code }); return; }
+      if (i < middlewares.length) { const mw = middlewares[i++]; await mw(req, res, next); }
+      else await handler(req, res);
+    };
+    await next();
+  }
+
+  // GET /api/plans
+  if (url.pathname === '/api/plans' && req.method === 'GET') {
+    await listPlans(req, res); return;
+  }
+  // GET /api/me/plan
+  if (url.pathname === '/api/me/plan' && req.method === 'GET') {
+    await runChain([authMiddleware], getMyPlan); return;
+  }
+  // POST /api/me/plan
+  if (url.pathname === '/api/me/plan' && req.method === 'POST') {
+    req.body = await readBody(req).catch(() => ({}));
+    await runChain([authMiddleware], setMyPlan); return;
+  }
+  // GET /api/me/usage
+  if (url.pathname === '/api/me/usage' && req.method === 'GET') {
+    await runChain([authMiddleware], getMyUsage); return;
+  }
+  // GET /api/me/usage/events
+  if (url.pathname === '/api/me/usage/events' && req.method === 'GET') {
+    req.query = Object.fromEntries(url.searchParams);
+    await runChain([authMiddleware], getMyUsageEvents); return;
+  }
+
+  // ── Phase 4: Workspace routes ─────────────────────────────────────────────
+  if (url.pathname === '/api/workspaces' && req.method === 'GET') {
+    await runChain([authMiddleware], listMyWorkspaces); return;
+  }
+  if (url.pathname === '/api/workspaces' && req.method === 'POST') {
+    req.body = await readBody(req).catch(() => ({}));
+    await runChain([authMiddleware], createWorkspace); return;
+  }
+  const wsMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)$/);
+  if (wsMatch) {
+    req.params = { id: wsMatch[1] };
+    if (req.method === 'GET')    { await runChain([authMiddleware], getWorkspace); return; }
+    if (req.method === 'PATCH')  { req.body = await readBody(req).catch(() => ({})); await runChain([authMiddleware], updateWorkspace); return; }
+    if (req.method === 'DELETE') { await runChain([authMiddleware], deleteWorkspace); return; }
+  }
+  const wsMembersMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/members$/);
+  if (wsMembersMatch) {
+    req.params = { id: wsMembersMatch[1] };
+    if (req.method === 'GET')  { await runChain([authMiddleware], listMembers); return; }
+    if (req.method === 'POST') { req.body = await readBody(req).catch(() => ({})); await runChain([authMiddleware], addMember); return; }
+  }
+  const wsMemberMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/members\/([^/]+)$/);
+  if (wsMemberMatch) {
+    req.params = { id: wsMemberMatch[1], uid: wsMemberMatch[2] };
+    if (req.method === 'PATCH')  { req.body = await readBody(req).catch(() => ({})); await runChain([authMiddleware], updateMemberRole); return; }
+    if (req.method === 'DELETE') { await runChain([authMiddleware], removeMember); return; }
+  }
+  // GET /api/workspaces/:id/usage
+  const wsUsageMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/usage$/);
+  if (wsUsageMatch && req.method === 'GET') {
+    req.params = { id: wsUsageMatch[1] };
+    await runChain([authMiddleware], getWorkspaceUsage); return;
+  }
+
+  // ── Phase 4: Admin routes ─────────────────────────────────────────────────
+  if (url.pathname === '/api/admin/metrics' && req.method === 'GET') {
+    await runChain([authMiddleware, requireAdmin], getMetrics); return;
+  }
+  if (url.pathname === '/api/admin/credits' && req.method === 'GET') {
+    await runChain([authMiddleware, requireAdmin], getCredits); return;
+  }
+  if (url.pathname === '/api/admin/subscriptions' && req.method === 'GET') {
+    await runChain([authMiddleware, requireAdmin], listSubscriptions); return;
+  }
+  const adminPlanMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/plan$/);
+  if (adminPlanMatch && req.method === 'POST') {
+    req.body = await readBody(req).catch(() => ({}));
+    req.params = { userId: adminPlanMatch[1] };
+    await runChain([authMiddleware, requireAdmin], setUserPlanAdmin); return;
+  }
+  const adminCreditsMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/credits$/);
+  if (adminCreditsMatch && req.method === 'POST') {
+    req.body = await readBody(req).catch(() => ({}));
+    req.params = { userId: adminCreditsMatch[1] };
+    await runChain([authMiddleware, requireAdmin], addUserCredits); return;
+  }
+
+  // ── Phase 5: Public routes (no auth) ─────────────────────────────────────────
+
+  // Landing page — serve static HTML
+  if ((url.pathname === '/' || url.pathname === '/landing') && req.method === 'GET') {
+    const landingPath = path.join(__dirname, 'landing', 'index.html');
+    if (fs.existsSync(landingPath)) {
+      rawRes.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', ...res._headers });
+      fs.createReadStream(landingPath).pipe(rawRes);
+    } else {
+      res.status(200).json({ message: 'MechaGen API — landing page not built yet', version: 'phase5' });
+    }
+    return;
+  }
+
+  // POST /api/analytics/track (public)
+  if (url.pathname === '/api/analytics/track' && req.method === 'POST') {
+    req.body = await readBody(req).catch(() => ({}));
+    await trackEvent(req, res); return;
+  }
+
+  // POST /api/waitlist  GET /api/waitlist/status
+  if (url.pathname === '/api/waitlist' && req.method === 'POST') {
+    req.body = await readBody(req).catch(() => ({}));
+    await submitWaitlist(req, res); return;
+  }
+  if (url.pathname === '/api/waitlist/status' && req.method === 'GET') {
+    req.query = Object.fromEntries(url.searchParams);
+    await checkWaitlistStatus(req, res); return;
+  }
+
+  // POST /api/feedback (auth optional)
+  if (url.pathname === '/api/feedback' && req.method === 'POST') {
+    req.body = await readBody(req).catch(() => ({}));
+    // Try to auth but don't block if no key
+    try { await new Promise(r => authMiddleware(req, res, r)); } catch { req.user = null; }
+    await submitFeedbackHandler(req, res); return;
+  }
+
+  // GET /api/demo/*  (public)
+  if (url.pathname === '/api/demo/project'     && req.method === 'GET') { await getDemoProjectHandler(req, res); return; }
+  if (url.pathname === '/api/demo/generations' && req.method === 'GET') { await getDemoGenerationsHandler(req, res); return; }
+  if (url.pathname === '/api/demo/blueprint'   && req.method === 'GET') { await getDemoBlueprintHandler(req, res); return; }
+  if (url.pathname === '/api/demo/reset'       && req.method === 'POST') {
+    await runChain([authMiddleware, requireAdmin], resetDemoHandler); return;
+  }
+
+  // ── Phase 5: Authenticated routes ───────────────────────────────────────────
+
+  // Onboarding
+  if (url.pathname === '/api/me/onboarding' && req.method === 'GET') {
+    await runChain([authMiddleware], getOnboarding); return;
+  }
+  if (url.pathname === '/api/me/onboarding/advance' && req.method === 'POST') {
+    await runChain([authMiddleware], advanceStep); return;
+  }
+  if (url.pathname === '/api/me/onboarding/complete' && req.method === 'POST') {
+    await runChain([authMiddleware], completeOnboarding); return;
+  }
+  if (url.pathname === '/api/me/onboarding/skip' && req.method === 'POST') {
+    await runChain([authMiddleware], skipOnboarding); return;
+  }
+
+  // ── Phase 5: Admin routes ──────────────────────────────────────────────
+  if (url.pathname === '/api/admin/launch' && req.method === 'GET') {
+    await runChain([authMiddleware, requireAdmin], getLaunchSummaryHandler); return;
+  }
+  if (url.pathname === '/api/admin/onboarding' && req.method === 'GET') {
+    await runChain([authMiddleware, requireAdmin], getOnboardingFunnelHandler); return;
+  }
+  if (url.pathname === '/api/admin/analytics' && req.method === 'GET') {
+    req.query = Object.fromEntries(url.searchParams);
+    await runChain([authMiddleware, requireAdmin], getAnalyticsSummaryHandler); return;
+  }
+  if (url.pathname === '/api/admin/waitlist' && req.method === 'GET') {
+    req.query = Object.fromEntries(url.searchParams);
+    await runChain([authMiddleware, requireAdmin], getAdminWaitlist); return;
+  }
+  if (url.pathname === '/api/admin/feedback' && req.method === 'GET') {
+    req.query = Object.fromEntries(url.searchParams);
+    await runChain([authMiddleware, requireAdmin], getAdminFeedback); return;
+  }
+  const feedbackStatusMatch = url.pathname.match(/^\/api\/admin\/feedback\/([^/]+)\/status$/);
+  if (feedbackStatusMatch && req.method === 'PATCH') {
+    req.body = await readBody(req).catch(() => ({}));
+    req.params = { id: feedbackStatusMatch[1] };
+    await runChain([authMiddleware, requireAdmin], updateFeedbackStatusHandler); return;
   }
 
   // Catch-all 404
@@ -260,16 +463,12 @@ server.on('error', (err) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[server] listening on http://127.0.0.1:${PORT}`);
-  console.log('[server] Legacy:   POST /api/generate  POST /api/ai/chat');
-  console.log('[server] Pipeline: POST /api/pipeline/generate');
-  console.log('[server]           GET  /api/generations/:id');
-  console.log('[server]           POST /api/generations/:id/repair');
-  console.log('[server]           GET  /api/generations/:id/export/status|obj|glb');
-  console.log('[server]           GET  /api/generations/:id/timeline');
-  console.log('[server]           GET  /api/catalog/part-types');
-  console.log('[server] Phase 2:  POST /api/blueprints/upload');
-  console.log('[server]           GET  /api/blueprints/:id');
-  console.log('[server]           POST /api/blueprints/:id/analyze');
-  console.log('[server]           GET  /api/projects/:projectId/history');
-  console.log('[server]           GET  /api/health');
+  console.log('[server] Phase 4:  GET  /api/plans');
+  console.log('[server]           GET  /api/me/plan  POST /api/me/plan');
+  console.log('[server]           GET  /api/me/usage  GET /api/me/usage/events');
+  console.log('[server]           GET/POST /api/workspaces');
+  console.log('[server]           GET/PATCH/DELETE /api/workspaces/:id');
+  console.log('[server]           GET/POST /api/workspaces/:id/members');
+  console.log('[server]           GET /api/admin/metrics');
+  console.log('[server]           GET /api/admin/credits');
 });

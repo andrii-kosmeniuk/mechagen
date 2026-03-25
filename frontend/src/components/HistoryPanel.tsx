@@ -41,6 +41,37 @@ function ExportBadge({ record }: { record: ExportRecord }) {
   );
 }
 
+function SolidBadge({ solidStatus }: { solidStatus?: string | null }) {
+  if (solidStatus === 'solid_ready') {
+    return (
+      <span style={{
+        padding: '1px 7px', borderRadius: 7, fontSize: 9, fontWeight: 800,
+        background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.25)',
+        color: '#4ade80', letterSpacing: '0.04em',
+      }}>SOLID ✓</span>
+    );
+  }
+  if (solidStatus === 'solid_failed') {
+    return (
+      <span style={{
+        padding: '1px 7px', borderRadius: 7, fontSize: 9, fontWeight: 800,
+        background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.2)',
+        color: '#f87171', letterSpacing: '0.04em',
+      }}>SOLID ✗</span>
+    );
+  }
+  if (solidStatus && solidStatus !== 'not_started') {
+    return (
+      <span style={{
+        padding: '1px 7px', borderRadius: 7, fontSize: 9, fontWeight: 800,
+        background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)',
+        color: '#a78bfa', letterSpacing: '0.04em',
+      }}>BUILDING…</span>
+    );
+  }
+  return null;
+}
+
 function BlueprintThumb({ blueprint }: { blueprint: BlueprintRecord }) {
   if (!blueprint.previewable) {
     return (
@@ -109,6 +140,7 @@ function GenCard({
             <span style={{ fontSize: 10, fontWeight: 700, color: '#7eb8f7' }}>
               {gen.specJson?.partType?.replace(/_/g, ' ').toUpperCase() || gen.status.toUpperCase()}
             </span>
+            <SolidBadge solidStatus={(gen as Generation & { solidStatus?: string }).solidStatus} />
             <span style={{ fontSize: 9, color: 'var(--text-muted)', marginLeft: 'auto' }}>
               {new Date(gen.createdAt).toLocaleString()}
             </span>

@@ -5,6 +5,11 @@ import { AssumptionsPanel, ValidationPanel } from './PipelinePanels';
 import { PipelineStatusBadge } from './PipelineStatusBadge';
 import { HistoryPanel } from './HistoryPanel';
 import { SolidStatusPanel } from './SolidStatusPanel';
+import { BillingPanel } from './BillingPanel';
+import { UsageDashboard } from './UsageDashboard';
+import { WorkspacePanel } from './WorkspacePanel';
+import { QuotaWarning } from './QuotaWarning';
+import { usePlan } from '../lib/usePlan';
 import type { ManufacturingMode } from '../types';
 
 const QUICK_TEMPLATES = [
@@ -17,7 +22,7 @@ const QUICK_TEMPLATES = [
 ];
 
 type AgentMode = 'single' | 'multi' | 'adversarial' | 'swarm';
-type PanelPage = 'design' | 'pipeline' | 'export' | 'history';
+type PanelPage = 'design' | 'pipeline' | 'export' | 'history' | 'billing' | 'workspace';
 
 export type LeftPanelProps = {
   projectName: string;
@@ -265,12 +270,14 @@ export function LeftPanel(props: LeftPanelProps) {
     },
   };
 
+  const planState = usePlan();
+
   return (
     <aside style={s.panel}>
       <div style={s.header}>
         <span style={s.brand}>⬡ MECHAGEN</span>
-        <div style={{ display: 'flex', gap: 2 }}>
-          {(['design', 'pipeline', 'export', 'history'] as const).map((id) => (
+        <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          {(['design', 'pipeline', 'export', 'history', 'billing', 'workspace'] as const).map((id) => (
             <button
               key={id}
               type="button"
@@ -574,18 +581,15 @@ export function LeftPanel(props: LeftPanelProps) {
                 )}
               </div>
             )}
+            {/* Phase 3: Solid build panel */}
+            {props.pipelineGeneration?.status === 'ready' && (
+              <SolidStatusPanel
+                generationId={props.pipelineGeneration.id}
+                generationStatus={props.pipelineGeneration.status}
+                onSolidBuilt={() => { /* STL is now downloadable */ }}
+              />
+            )}
           </div>
-
-          {/* Phase 3: Solid build panel */}
-          {props.pipelineGeneration?.status === 'ready' && (
-            <SolidStatusPanel
-              generationId={props.pipelineGeneration.id}
-              generationStatus={props.pipelineGeneration.status}
-              onSolidBuilt={() => {
-                // STL download available — optional callback
-              }}
-            />
-          )}
         )}
 
         {page === 'export' && (
@@ -654,6 +658,49 @@ export function LeftPanel(props: LeftPanelProps) {
             <HistoryPanel
               projectId={props.projectId || 'default-project'}
             />
+          </div>
+        )}
+
+        {page === 'billing' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={s.sectionTitle}>💳 PLAN & BILLING</div>
+            {planState.loading && (
+              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Loading…</div>
+            )}
+            {!planState.loading && planState.usage && (
+              <QuotaWarning usage={planState.usage} threshold={80} />
+            )}
+            {!planState.loading && (
+              <BillingPanel
+                plan={planState.plan}
+                subscription={planState.subscription}
+                usage={planState.usage}
+                onUpgrade={() => window.open('https://mechagen.io/pricing', '_blank')}
+                devMode={import.meta.env.DEV}
+                onSetPlan={planState.setUserPlan}
+              />
+            )}
+            {!planState.loading && planState.usage && (
+              <>
+                <div style={{ ...s.sectionTitle, marginTop: 4 }}>📊 USAGE THIS MONTH</div>
+                <UsageDashboard usage={planState.usage} />
+              </>
+            )}
+          </div>
+        )}
+
+        {page === 'workspace' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={s.sectionTitle}>🏢 WORKSPACES</div>
+            {planState.loading && (
+              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Loading…</div>
+            )}
+            {!planState.loading && (
+              <WorkspacePanel
+                workspaces={planState.workspaces}
+                onRefresh={planState.refresh}
+              />
+            )}
           </div>
         )}
       </div>

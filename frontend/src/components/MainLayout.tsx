@@ -6,6 +6,9 @@ import { TopBar } from './TopBar';
 import { LeftPanel } from './LeftPanel';
 import { ChatPanel } from './ChatPanel';
 import { PipelineStatusBadge } from './PipelineStatusBadge';
+import { OnboardingModal } from './OnboardingModal';
+import { FeedbackWidget } from './FeedbackWidget';
+import { DemoMode } from './DemoMode';
 import { createApi } from '../lib/api';
 import { useToast } from '../context/ToastContext';
 import { useTheme } from '../context/ThemeContext';
@@ -599,6 +602,20 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
 
         <ChatPanel />
       </div>
+
+      {/* Phase 5: Onboarding modal — auto-shows for first-time users */}
+      <OnboardingModal userId={user.id} />
+
+      {/* Phase 5: Feedback widget — floating bottom-right */}
+      <FeedbackWidget />
+
+      {/* Phase 5: Demo mode banner — triggered by ?demo=true */}
+      <DemoMode
+        onLoadProject={(project, generations) => {
+          setProjectName(project.name);
+          setProjectDesc(project.description ?? '');
+        }}
+      />
     </div>
   );
 }

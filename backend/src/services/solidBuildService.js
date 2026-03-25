@@ -301,4 +301,5 @@ module.exports = {
   startSolidBuild,
   getSolidBuild,
   getSolidBuildByGenerationId,
+  getSolidBuildStore: () => Array.from(solidBuildStore.values()),
 };

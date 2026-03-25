@@ -5,7 +5,7 @@ export async function exportMeshToStlBlob(root: Object3D): Promise<Blob> {
   const { STLExporter } = await import('three/examples/jsm/exporters/STLExporter.js');
   const exp = new STLExporter();
   const result = exp.parse(root, { binary: true });
-  return new Blob([result as ArrayBuffer], { type: 'model/stl' });
+  return new Blob([result as unknown as ArrayBuffer], { type: 'model/stl' });
 }
 
 export async function exportMeshToObjBlob(root: Object3D): Promise<Blob> {
