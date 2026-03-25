@@ -35,8 +35,11 @@ loadEnvFile(path.join(__dirname, '.env'));
 const http = require('http');
 const { URL }  = require('url');
 
-const generateHandler = require('./api/generate');
-const chatHandler = require('./api/ai/chat');
+const generateHandler     = require('./api/generate');
+const chatHandler         = require('./api/ai/chat');
+const pipelineGenHandler  = require('./src/api/pipelineGenerate');
+const { getGenerationHandler, repairHandler } = require('./src/api/generations');
+const catalogHandler      = require('./src/api/catalog');
 
 const PORT = process.env.PORT || 3001;
 
@@ -113,6 +116,44 @@ const server = http.createServer(async (req, rawRes) => {
     return;
   }
 
+  // ── New structured pipeline routes ────────────────────────────────────────
+  if (url.pathname === '/api/pipeline/generate') {
+    try {
+      req.body = await readBody(req);
+    } catch {
+      res.status(400).json({ error: 'Invalid JSON body' });
+      return;
+    }
+    await pipelineGenHandler(req, res);
+    return;
+  }
+
+  // GET /api/generations/:id
+  const genMatch = url.pathname.match(/^\/api\/generations\/([^/]+)$/);
+  if (genMatch) {
+    await getGenerationHandler(req, res, genMatch[1]);
+    return;
+  }
+
+  // POST /api/generations/:id/repair
+  const repairMatch = url.pathname.match(/^\/api\/generations\/([^/]+)\/repair$/);
+  if (repairMatch) {
+    await repairHandler(req, res, repairMatch[1]);
+    return;
+  }
+
+  // GET /api/catalog/part-types
+  if (url.pathname === '/api/catalog/part-types') {
+    await catalogHandler(req, res);
+    return;
+  }
+
+  // GET /api/health
+  if (url.pathname === '/api/health') {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+    return;
+  }
+
   // Catch-all 404
   res.status(404).json({ error: `No route for ${req.method} ${url.pathname}` });
 });
@@ -132,5 +173,10 @@ server.on('error', (err) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[server] listening on http://127.0.0.1:${PORT}`);
-  console.log('[server] API: POST /api/generate  POST /api/ai/chat');
+  console.log('[server] Legacy:   POST /api/generate  POST /api/ai/chat');
+  console.log('[server] Pipeline: POST /api/pipeline/generate');
+  console.log('[server]           GET  /api/generations/:id');
+  console.log('[server]           POST /api/generations/:id/repair');
+  console.log('[server]           GET  /api/catalog/part-types');
+  console.log('[server]           GET  /api/health');
 });

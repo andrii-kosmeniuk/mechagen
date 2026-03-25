@@ -13,7 +13,7 @@ OUTPUT SHAPE (required)
   "name": "Short human-readable part name",
   "description": "One sentence what the assembly is",
   "dimensions": { "x": number, "y": number, "z": number },
-  "parts": [ /* 20–60 primitives for detailed parts; see limits below */ ]
+  "parts": [ /* detailed parts: stay within hard max below; see BOLTS */ ]
 }
 
 - dimensions: approximate overall size in millimeters (user-facing), consistent with your chosen scene unit scale.
@@ -35,21 +35,24 @@ Params: box → w, h, d | cylinder/cone → r, h, radSeg (optional, default 32) 
 All rotations in radians. Y is up.
 
 ══════════════════════════════════════════════════════════════════════════════
-PART COUNT
+PART COUNT (STRICT — server rejects >60 parts)
 ══════════════════════════════════════════════════════════════════════════════
 - Simple parts: fewer primitives is OK.
-- Detailed bolts, gears, bearings, brackets: use up to 60 parts total (hard max).
+- Hard maximum: 60 entries in "parts". Never output 61+ — the request will fail.
+- Detailed bolts, gears, bearings, brackets must stay ≤60 total.
 - Calculate every position numerically in JSON — no formulas, no cos()/sin() text; evaluate trig yourself.
 
 ══════════════════════════════════════════════════════════════════════════════
 BOLTS AND SCREWS
 ══════════════════════════════════════════════════════════════════════════════
-- Thread section: 18–22 thread PAIRS (each pair = 2 cylinders: crest + valley), stacked on Y.
+- Thread section: each pair = 2 cylinders (crest + valley), stacked on Y.
 - Crest: r = shaft_r + 0.015, h = 0.028, radSeg 32
 - Valley: r = shaft_r, h = 0.027
 - Stack pitch: advance 0.055 per pair center along +Y (no gaps, no overlaps between consecutive pairs).
 - Hex head: cylinder radSeg 6, rotation.y = 0.5236 (30°), place head at negative Y (bottom).
-- Thumb / knurled bolt: add exactly 20 thin box parts around the head (knurl lines), angles i*(2π/20), x = cos(angle)*radius, z = sin(angle)*radius.
+- Thread pair count (choose ONE strategy so total parts ≤60):
+  • Standard bolt (no knurl): 18–22 thread pairs + head + shank + tip (+ optional washer) — do NOT add the 20 knurl boxes.
+  • Knurled / thumb screw: add exactly 20 knurl box parts OR use at most 14 thread pairs (not both max thread count and full knurl).
 - Tip: cone at positive Y end.
 - Smooth shank segments as needed (cylinders).
 

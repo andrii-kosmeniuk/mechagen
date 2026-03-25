@@ -1,5 +1,9 @@
 import React, { useRef, useState } from 'react';
-import type { GeomData, HistoryPart } from '../types';
+import type { GeomData, HistoryPart, Generation } from '../types';
+import { PipelineForm }  from './PipelineForm';
+import { AssumptionsPanel, ValidationPanel } from './PipelinePanels';
+import { PipelineStatusBadge } from './PipelineStatusBadge';
+import type { ManufacturingMode } from '../types';
 
 const QUICK_TEMPLATES = [
   'Gear',
@@ -11,7 +15,7 @@ const QUICK_TEMPLATES = [
 ];
 
 type AgentMode = 'single' | 'multi' | 'adversarial' | 'swarm';
-type PanelPage = 'design' | 'export' | 'history';
+type PanelPage = 'design' | 'pipeline' | 'export' | 'history';
 
 export type LeftPanelProps = {
   projectName: string;
@@ -24,6 +28,10 @@ export type LeftPanelProps = {
   setMultiAgent: (v: boolean) => void;
   highDetail: boolean;
   setHighDetail: (v: boolean) => void;
+  proceduralParts: boolean;
+  setProceduralParts: (v: boolean) => void;
+  polishBeforeGenerate: boolean;
+  setPolishBeforeGenerate: (v: boolean) => void;
   wireframe: boolean;
   setWireframe: (v: boolean) => void;
   modelOpacity: number;
@@ -39,6 +47,19 @@ export type LeftPanelProps = {
   onSelectHistoryPart: (p: HistoryPart) => void;
   geomData: GeomData | null;
   onExportFormat: (format: 'STL' | 'STEP' | 'OBJ' | 'GLTF') => void | Promise<void>;
+  // Pipeline props
+  pipelineGeneration?: Generation | null;
+  pipelineGenerating?: boolean;
+  pipelineRepairing?: boolean;
+  pipelineError?: string | null;
+  onPipelineGenerate?: (params: {
+    prompt: string;
+    context: string;
+    manufacturingMode: ManufacturingMode;
+    materialPreference: string;
+    highDetail: boolean;
+  }) => void;
+  onPipelineRepair?: () => void;
 };
 
 export function LeftPanel(props: LeftPanelProps) {
@@ -241,7 +262,7 @@ export function LeftPanel(props: LeftPanelProps) {
       <div style={s.header}>
         <span style={s.brand}>⬡ MECHAGEN</span>
         <div style={{ display: 'flex', gap: 2 }}>
-          {(['design', 'export', 'history'] as const).map((id) => (
+          {(['design', 'pipeline', 'export', 'history'] as const).map((id) => (
             <button
               key={id}
               type="button"
@@ -251,7 +272,7 @@ export function LeftPanel(props: LeftPanelProps) {
               }}
               onClick={() => setPage(id)}
             >
-              {id.toUpperCase()}
+              {id === 'pipeline' ? '🔬' : id.toUpperCase()}
             </button>
           ))}
         </div>
@@ -419,6 +440,104 @@ export function LeftPanel(props: LeftPanelProps) {
               {props.generating ? 'GENERATING…' : 'GENERATE PART'}
             </button>
           </>
+        )}
+
+        {page === 'pipeline' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Header */}
+            <div style={{
+              padding: '10px 12px', borderRadius: 8,
+              background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.2)',
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: '#818cf8', letterSpacing: '0.07em', marginBottom: 4 }}>
+                🔬 STRUCTURED PIPELINE
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                AI → Spec JSON → Constraint Check → Geometry Plan → Validate → Repair
+              </div>
+            </div>
+
+            {/* Status badge if active */}
+            {props.pipelineGeneration && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <PipelineStatusBadge status={props.pipelineGeneration.status} />
+                {props.pipelineGeneration.specJson && (
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                    {props.pipelineGeneration.specJson.partType?.replace(/_/g, ' ')}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Error */}
+            {props.pipelineError && (
+              <div style={{
+                padding: '8px 10px', borderRadius: 7, fontSize: 10,
+                background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.25)',
+                color: '#f87171',
+              }}>
+                ❌ {props.pipelineError}
+              </div>
+            )}
+
+            {/* Pipeline form */}
+            {props.onPipelineGenerate && (
+              <PipelineForm
+                generating={!!props.pipelineGenerating}
+                onGenerate={props.onPipelineGenerate}
+              />
+            )}
+
+            {/* Divider */}
+            {props.pipelineGeneration && <div style={s.divider} />}
+
+            {/* Assumptions */}
+            {(props.pipelineGeneration?.specJson || props.pipelineGeneration?.constraintReport) && (
+              <div>
+                <div style={{ ...s.sectionTitle, marginBottom: 8 }}>📐 ASSUMPTIONS</div>
+                <AssumptionsPanel
+                  spec={props.pipelineGeneration?.specJson}
+                  constraintReport={props.pipelineGeneration?.constraintReport}
+                />
+              </div>
+            )}
+
+            {/* Validation */}
+            {(props.pipelineGeneration?.validationReport || props.pipelineGeneration?.constraintReport) && (
+              <div>
+                <div style={{ ...s.sectionTitle, marginBottom: 8 }}>✅ VALIDATION</div>
+                <ValidationPanel
+                  validationReport={props.pipelineGeneration?.validationReport}
+                  constraintReport={props.pipelineGeneration?.constraintReport}
+                  repairHistory={props.pipelineGeneration?.repairHistory}
+                  onRepair={props.onPipelineRepair}
+                  repairing={props.pipelineRepairing}
+                />
+              </div>
+            )}
+
+            {/* Build metadata */}
+            {props.pipelineGeneration?.buildMetadata && props.pipelineGeneration.status === 'ready' && (
+              <div style={{
+                padding: '8px 10px', borderRadius: 8, fontSize: 10,
+                background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.14)',
+              }}>
+                <div style={{ fontWeight: 700, color: '#4ade80', marginBottom: 4 }}>✅ Pipeline Complete</div>
+                {(() => {
+                  const m = props.pipelineGeneration.buildMetadata as Record<string, unknown>;
+                  return (
+                    <div style={{ color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {Boolean(m.totalDurationMs) && <span>⏱ {Math.round(Number(m.totalDurationMs) / 1000)}s total</span>}
+                      {m.previewPartCount !== undefined && <span>🔷 {Number(m.previewPartCount)} mesh primitives</span>}
+                      {m.repairAttempts !== undefined && Number(m.repairAttempts) > 0 && (
+                        <span>🔧 {Number(m.repairAttempts)} repair attempt(s)</span>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
         )}
 
         {page === 'export' && (

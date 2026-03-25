@@ -12,3 +12,6 @@ backend/node_modules/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Cached font for scripts/render-brand-png.py
+scripts/.space-grotesk-700.ttf

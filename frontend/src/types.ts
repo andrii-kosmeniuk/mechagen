@@ -10,15 +10,11 @@ export interface GeomPart {
 }
 
 export interface GeomData {
-  code: string;   // Raw JSCAD or CadQuery source (for display / JSCAD path)
-  /** Base64 STL from CadQuery when the backend used the Python runner */
+  code: string;
   stl?: string;
   name?: string;
-  /** AI procedural JSON summary (optional) */
   description?: string;
-  /** Approximate bounding size in mm from AI (JSON parts mode) */
   dimensions?: { x: number; y: number; z: number };
-  /** AI procedural JSON primitives — rendered directly in the viewport when present */
   parts?: GeomPart[];
 }
 
@@ -36,3 +32,103 @@ export interface HistoryPart {
   createdAt: string;
   geomData: GeomData;
 }
+
+// ─── Pipeline Types ────────────────────────────────────────────────────────────
+
+export type GenerationStatus =
+  | 'queued'
+  | 'spec_generating'
+  | 'constraint_checking'
+  | 'planning'
+  | 'building_preview'
+  | 'building_solid'
+  | 'validating'
+  | 'repairing'
+  | 'ready'
+  | 'failed';
+
+export type ManufacturingMode = '3d_print' | 'cnc' | 'sheet_metal' | 'unknown';
+
+export type CanonicalPartType =
+  | 'bracket' | 'mounting_plate' | 'spacer' | 'enclosure'
+  | 'shaft_coupler' | 'gear_basic' | 'pulley_basic' | 'bearing_block'
+  | 'flange' | 'standoff' | 'clamp' | 'simple_housing';
+
+export interface SpecJSON {
+  version: '1.0';
+  partType: CanonicalPartType;
+  intentSummary: string;
+  units: 'mm';
+  manufacturingMode: ManufacturingMode;
+  materialPreference: string;
+  targetUse: string;
+  knownDimensions: Record<string, number>;
+  assumedDimensions: Record<string, number>;
+  constraints: string[];
+  features: string[];
+  missingInformation: string[];
+  riskFlags: string[];
+  confidence: number;
+}
+
+export interface ConstraintReport {
+  isBuildable: boolean;
+  severity: 'none' | 'low' | 'medium' | 'high';
+  errors: string[];
+  warnings: string[];
+  assumptionsUsed: string[];
+  missingRequiredFields: string[];
+  recommendedQuestions: string[];
+  normalizedSpec: Partial<SpecJSON>;
+}
+
+export interface ValidationError {
+  code: string;
+  message: string;
+  stepId?: string;
+  suggestedFix: string;
+}
+
+export interface ValidationWarning {
+  code: string;
+  message: string;
+  suggestedFix: string;
+}
+
+export interface ValidationReport {
+  valid: boolean;
+  severity: 'none' | 'low' | 'medium' | 'high';
+  errors: ValidationError[];
+  warnings: ValidationWarning[];
+  checksRun: string[];
+  repairable: boolean;
+}
+
+export interface RepairOutput {
+  repairAttempt: number;
+  changesApplied: string[];
+  resultStatus: 'revalidated' | 'failed' | 'needs_ai';
+}
+
+export interface Generation {
+  id: string;
+  projectId: string;
+  prompt: string;
+  context?: string;
+  status: GenerationStatus;
+  manufacturingMode?: ManufacturingMode;
+  materialPreference?: string;
+  highDetail: boolean;
+  specJson?: SpecJSON;
+  constraintReport?: ConstraintReport;
+  geometryPlan?: Record<string, unknown>;
+  validationReport?: ValidationReport;
+  repairHistory?: RepairOutput[];
+  buildMetadata?: Record<string, unknown>;
+  previewParts?: GeomPart[];
+  stlBase64?: string;
+  errorContext?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
