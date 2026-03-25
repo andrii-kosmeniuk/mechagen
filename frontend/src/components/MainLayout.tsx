@@ -488,6 +488,9 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
           pipelineError={pipeline.error}
           onPipelineGenerate={pipeline.generate}
           onPipelineRepair={pipeline.repair}
+          onPipelineExportObj={pipeline.generation?.status === 'ready' ? pipeline.downloadObj : undefined}
+          onPipelineExportGlb={pipeline.generation?.status === 'ready' ? pipeline.downloadGlb : undefined}
+          projectId="default-project"
         />
 
         <main className="viewport-container" style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>

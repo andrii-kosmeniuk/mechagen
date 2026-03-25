@@ -140,4 +140,44 @@ module.exports = {
   getGeometryPlanSystemPrompt,
   buildSpecUserMessage,
   buildGeometryPlanUserMessage,
+  buildBlueprintAwareSpecUserMessage,
 };
+
+/**
+ * Builds spec user message when a blueprint analysis is available.
+ * Merges blueprint context above the user prompt.
+ *
+ * @param {object} input - same as buildSpecUserMessage
+ * @param {{ blueprintContext: string, blueprintDerivedDimensions: object }} blueprintHints
+ */
+function buildBlueprintAwareSpecUserMessage(input, blueprintHints) {
+  const parts = [];
+
+  if (blueprintHints && blueprintHints.blueprintContext) {
+    parts.push(blueprintHints.blueprintContext);
+    parts.push('---');
+  }
+
+  if (input.projectName) parts.push(`Part name: ${input.projectName}`);
+  if (input.manufacturingMode && input.manufacturingMode !== 'unknown') {
+    parts.push(`Manufacturing mode: ${input.manufacturingMode}`);
+  }
+  if (input.materialPreference) parts.push(`Material: ${input.materialPreference}`);
+  if (input.context) parts.push(`Design context / constraints:\n${input.context}`);
+
+  const bpDims = (blueprintHints && blueprintHints.blueprintDerivedDimensions) || {};
+  if (Object.keys(bpDims).length > 0) {
+    const dimLines = Object.entries(bpDims)
+      .map(([k, v]) => `  ${k}: ${v} mm (blueprint-derived)`)
+      .join('\n');
+    parts.push(`Blueprint-derived dimensions:\n${dimLines}`);
+  }
+
+  parts.push(`User prompt:\n${input.prompt}`);
+  parts.push(
+    'knownDimensions: dimensions stated explicitly by the user or clearly visible in the blueprint. ' +
+    'assumedDimensions: anything you are defaulting. Keep confidence honest.'
+  );
+
+  return parts.join('\n\n');
+}

@@ -3,6 +3,8 @@ import type { GeomData, HistoryPart, Generation } from '../types';
 import { PipelineForm }  from './PipelineForm';
 import { AssumptionsPanel, ValidationPanel } from './PipelinePanels';
 import { PipelineStatusBadge } from './PipelineStatusBadge';
+import { HistoryPanel } from './HistoryPanel';
+import { SolidStatusPanel } from './SolidStatusPanel';
 import type { ManufacturingMode } from '../types';
 
 const QUICK_TEMPLATES = [
@@ -58,8 +60,14 @@ export type LeftPanelProps = {
     manufacturingMode: ManufacturingMode;
     materialPreference: string;
     highDetail: boolean;
+    blueprintId?: string;
+    solidRequested?: boolean;
   }) => void;
   onPipelineRepair?: () => void;
+  onPipelineExportObj?: () => void;
+  onPipelineExportGlb?: () => void;
+  onDownloadStl?: () => void;
+  projectId?: string;
 };
 
 export function LeftPanel(props: LeftPanelProps) {
@@ -485,6 +493,7 @@ export function LeftPanel(props: LeftPanelProps) {
               <PipelineForm
                 generating={!!props.pipelineGenerating}
                 onGenerate={props.onPipelineGenerate}
+                projectId={props.projectId}
               />
             )}
 
@@ -532,12 +541,51 @@ export function LeftPanel(props: LeftPanelProps) {
                       {m.repairAttempts !== undefined && Number(m.repairAttempts) > 0 && (
                         <span>🔧 {Number(m.repairAttempts)} repair attempt(s)</span>
                       )}
+                      {Boolean(m.hadBlueprint) && <span>📐 Blueprint-assisted</span>}
                     </div>
                   );
                 })()}
+
+                {/* Phase 2: Export buttons */}
+                {(props.onPipelineExportObj || props.onPipelineExportGlb) && (
+                  <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.07em', marginBottom: 4, width: '100%' }}>EXPORT</div>
+                    {props.onPipelineExportObj && (
+                      <button
+                        onClick={props.onPipelineExportObj}
+                        style={{
+                          flex: 1, padding: '6px 0', borderRadius: 6, border: 'none', cursor: 'pointer',
+                          fontSize: 10, fontWeight: 700,
+                          background: 'rgba(52,211,153,0.15)', color: '#34d399',
+                        }}
+                      >↓ OBJ</button>
+                    )}
+                    {props.onPipelineExportGlb && (
+                      <button
+                        onClick={props.onPipelineExportGlb}
+                        style={{
+                          flex: 1, padding: '6px 0', borderRadius: 6, border: 'none', cursor: 'pointer',
+                          fontSize: 10, fontWeight: 700,
+                          background: 'rgba(96,165,250,0.15)', color: '#60a5fa',
+                        }}
+                      >↓ GLB</button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
+
+          {/* Phase 3: Solid build panel */}
+          {props.pipelineGeneration?.status === 'ready' && (
+            <SolidStatusPanel
+              generationId={props.pipelineGeneration.id}
+              generationStatus={props.pipelineGeneration.status}
+              onSolidBuilt={() => {
+                // STL download available — optional callback
+              }}
+            />
+          )}
         )}
 
         {page === 'export' && (
@@ -601,32 +649,11 @@ export function LeftPanel(props: LeftPanelProps) {
         )}
 
         {page === 'history' && (
-          <div>
-            <div style={s.sectionTitle}>History</div>
-            {props.historyParts.length === 0 ? (
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                No parts yet. Generate one from Design.
-              </div>
-            ) : (
-              props.historyParts.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  style={{
-                    ...s.chip,
-                    width: '100%',
-                    textAlign: 'left',
-                    marginBottom: 6,
-                  }}
-                  onClick={() => {
-                    props.onSelectHistoryPart(p);
-                    setPage('design');
-                  }}
-                >
-                  {p.name}
-                </button>
-              ))
-            )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={s.sectionTitle}>Project History</div>
+            <HistoryPanel
+              projectId={props.projectId || 'default-project'}
+            />
           </div>
         )}
       </div>

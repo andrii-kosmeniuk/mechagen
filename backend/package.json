@@ -2,14 +2,18 @@
   "name": "mechagen-backend",
   "version": "1.0.0",
   "description": "MechaGen AI geometry generation backend",
-  "engines": { "node": ">=18.x" },
+  "engines": {
+    "node": ">=18.x"
+  },
   "scripts": {
     "start": "node server.js",
-    "dev":   "node server.js",
-    "lint":  "node --check lib/ai.js lib/cadquerySystemPrompt.js lib/geometry.js lib/sanitize.js lib/executeGenerate.js api/generate.js"
+    "dev": "node server.js",
+    "lint": "node --check lib/ai.js lib/cadquerySystemPrompt.js lib/geometry.js lib/sanitize.js lib/executeGenerate.js api/generate.js"
   },
-
   "devDependencies": {
     "vercel": "latest"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0"
   }
 }

@@ -40,6 +40,13 @@ const chatHandler         = require('./api/ai/chat');
 const pipelineGenHandler  = require('./src/api/pipelineGenerate');
 const { getGenerationHandler, repairHandler } = require('./src/api/generations');
 const catalogHandler      = require('./src/api/catalog');
+// Phase 2
+const blueprintUploadHandler = require('./src/api/blueprintUpload');
+const { analyzeHandler: blueprintAnalyzeHandler, getHandler: blueprintGetHandler } = require('./src/api/blueprintAnalyze');
+const { statusHandler: exportStatusHandler, objHandler: exportObjHandler, glbHandler: exportGlbHandler, stlHandler: exportStlHandler } = require('./src/api/exportHandler');
+const { projectHistoryHandler, generationTimelineHandler } = require('./src/api/historyHandler');
+// Phase 3
+const { solidStartHandler, solidStatusHandler } = require('./src/api/solidBuildHandler');
 
 const PORT = process.env.PORT || 3001;
 
@@ -91,6 +98,18 @@ const server = http.createServer(async (req, rawRes) => {
   if (req.method === 'OPTIONS') {
     rawRes.writeHead(204, res._headers);
     rawRes.end();
+    return;
+  }
+
+  // Serve uploaded files statically (/uploads/...)
+  if (url.pathname.startsWith('/uploads/')) {
+    const filePath = path.join(__dirname, url.pathname);
+    if (!fs.existsSync(filePath)) { res.status(404).json({ error: 'File not found' }); return; }
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeMap = { '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.webp':'image/webp', '.pdf':'application/pdf', '.obj':'model/obj', '.glb':'model/gltf-binary' };
+    const mime = mimeMap[ext] || 'application/octet-stream';
+    rawRes.writeHead(200, { ...res._headers, 'Content-Type': mime });
+    fs.createReadStream(filePath).pipe(rawRes);
     return;
   }
 
@@ -148,6 +167,74 @@ const server = http.createServer(async (req, rawRes) => {
     return;
   }
 
+  // ── Phase 2: Blueprint routes ────────────────────────────────────────────
+  // POST /api/blueprints/upload  (multipart)
+  if (url.pathname === '/api/blueprints/upload' && req.method === 'POST') {
+    req.params = {};
+    await blueprintUploadHandler(req, res);
+    return;
+  }
+
+  // GET  /api/blueprints/:id
+  const bpGetMatch = url.pathname.match(/^\/api\/blueprints\/([^/]+)$/);
+  if (bpGetMatch && req.method === 'GET') {
+    req.params = { id: bpGetMatch[1] };
+    await blueprintGetHandler(req, res);
+    return;
+  }
+
+  // POST /api/blueprints/:id/analyze
+  const bpAnalyzeMatch = url.pathname.match(/^\/api\/blueprints\/([^/]+)\/analyze$/);
+  if (bpAnalyzeMatch && req.method === 'POST') {
+    req.params = { id: bpAnalyzeMatch[1] };
+    await blueprintAnalyzeHandler(req, res);
+    return;
+  }
+
+  // GET /api/generations/:id/export/status|obj|glb|stl
+  const exportMatch = url.pathname.match(/^\/api\/generations\/([^/]+)\/export\/(status|obj|glb|stl)$/);
+  if (exportMatch && req.method === 'GET') {
+    req.params = { id: exportMatch[1] };
+    if (exportMatch[2] === 'status') { await exportStatusHandler(req, res); return; }
+    if (exportMatch[2] === 'obj')    { await exportObjHandler(req, res); return; }
+    if (exportMatch[2] === 'glb')    { await exportGlbHandler(req, res); return; }
+    if (exportMatch[2] === 'stl')    { await exportStlHandler(req, res); return; }
+  }
+
+  // ── Phase 3: Solid build routes ───────────────────────────────────────────
+  // POST /api/generations/:id/solid/start
+  const solidStartMatch = url.pathname.match(/^\/api\/generations\/([^/]+)\/solid\/start$/);
+  if (solidStartMatch && req.method === 'POST') {
+    req.params = { id: solidStartMatch[1] };
+    req.body = req.body || await readBody(req).catch(() => ({}));
+    await solidStartHandler(req, res);
+    return;
+  }
+
+  // GET /api/generations/:id/solid/status
+  const solidStatusMatch = url.pathname.match(/^\/api\/generations\/([^/]+)\/solid\/status$/);
+  if (solidStatusMatch && req.method === 'GET') {
+    req.params = { id: solidStatusMatch[1] };
+    await solidStatusHandler(req, res);
+    return;
+  }
+
+  // GET /api/generations/:id/timeline
+  const timelineMatch = url.pathname.match(/^\/api\/generations\/([^/]+)\/timeline$/);
+  if (timelineMatch && req.method === 'GET') {
+    req.params = { id: timelineMatch[1] };
+    await generationTimelineHandler(req, res);
+    return;
+  }
+
+  // GET /api/projects/:projectId/history
+  const historyMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/history$/);
+  if (historyMatch && req.method === 'GET') {
+    req.params = { projectId: historyMatch[1] };
+    await projectHistoryHandler(req, res);
+    return;
+  }
+
   // GET /api/health
   if (url.pathname === '/api/health') {
     res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -177,6 +264,12 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('[server] Pipeline: POST /api/pipeline/generate');
   console.log('[server]           GET  /api/generations/:id');
   console.log('[server]           POST /api/generations/:id/repair');
+  console.log('[server]           GET  /api/generations/:id/export/status|obj|glb');
+  console.log('[server]           GET  /api/generations/:id/timeline');
   console.log('[server]           GET  /api/catalog/part-types');
+  console.log('[server] Phase 2:  POST /api/blueprints/upload');
+  console.log('[server]           GET  /api/blueprints/:id');
+  console.log('[server]           POST /api/blueprints/:id/analyze');
+  console.log('[server]           GET  /api/projects/:projectId/history');
   console.log('[server]           GET  /api/health');
 });
