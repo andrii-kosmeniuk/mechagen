@@ -15,6 +15,7 @@ const path           = require('path');
 const fs             = require('fs');
 const { randomUUID } = require('crypto');
 const { translateToCadQuery } = require('./cadqueryTranslator');
+const repo = require('../repositories/solidBuildRepo');
 
 // ─── Config ────────────────────────────────────────────────────────────────────
 
@@ -24,14 +25,11 @@ const DEFAULT_TIMEOUT = parseInt(process.env.CADQUERY_TIMEOUT_MS || '60000', 10)
 
 if (!fs.existsSync(STL_OUTPUT_DIR)) fs.mkdirSync(STL_OUTPUT_DIR, { recursive: true });
 
-// ─── In-memory store ───────────────────────────────────────────────────────────
+// ─── Repo wrappers ─────────────────────────────────────────────────────────────
 
-/** @type {Map<string, object>} */
-const solidBuildStore = new Map();
-
-function getSolidBuild(buildId) { return solidBuildStore.get(buildId) ?? null; }
+function getSolidBuild(buildId) { return repo.get(buildId); }
 function getSolidBuildByGenerationId(genId) {
-  return Array.from(solidBuildStore.values()).find(b => b.generationId === genId) ?? null;
+  return repo.listByGeneration(genId)[0] ?? null;
 }
 
 // ─── Python detection ──────────────────────────────────────────────────────────
@@ -190,7 +188,7 @@ async function startSolidBuild(generation, opts = {}) {
     createdAt:         new Date().toISOString(),
     updatedAt:         new Date().toISOString(),
   };
-  solidBuildStore.set(buildId, record);
+  repo.set(buildId, record);
 
   // Run async
   _runSolidBuild(record, generation, outputPath, stlName, timeoutMs).catch(err => {
@@ -205,10 +203,7 @@ async function startSolidBuild(generation, opts = {}) {
 }
 
 function _updateBuild(buildId, updates) {
-  const existing = solidBuildStore.get(buildId) || {};
-  const updated  = { ...existing, ...updates, updatedAt: new Date().toISOString() };
-  solidBuildStore.set(buildId, updated);
-  return updated;
+  return repo.update(buildId, updates);
 }
 
 async function _runSolidBuild(record, generation, outputPath, stlName, timeoutMs) {
@@ -301,5 +296,5 @@ module.exports = {
   startSolidBuild,
   getSolidBuild,
   getSolidBuildByGenerationId,
-  getSolidBuildStore: () => Array.from(solidBuildStore.values()),
+  getSolidBuildStore: () => repo.list(),
 };

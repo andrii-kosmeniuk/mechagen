@@ -35,7 +35,11 @@ async function testAsync(name, fn) {
   }
 }
 
+// Set DATA_DIR to a writable temp path before importing any repo-backed services
+process.env.DATA_DIR = require('os').tmpdir();
+
 const { getSolidBuild, getSolidBuildByGenerationId } = require('../src/services/solidBuildService');
+
 
 console.log('\n📋 solidBuildService tests\n');
 

@@ -131,14 +131,18 @@ function buildMeshFromParts(parts: GeomPart[]): {
 
     switch (shape) {
       case 'box':
-        geo = new THREE.BoxGeometry(p.w || 1, p.h || 1, p.d || 1);
+        geo = new THREE.BoxGeometry(
+          p.width  !== undefined ? p.width  : (p.w || 1),
+          p.height !== undefined ? p.height : (p.h || 1),
+          p.depth  !== undefined ? p.depth  : (p.d || 1)
+        );
         break;
       case 'cylinder':
         geo = new THREE.CylinderGeometry(
-          p.r || 0.5,
-          p.r || 0.5,
-          p.h || 1,
-          Math.max(3, Math.floor(p.radSeg || 32))
+          p.radiusTop  !== undefined ? p.radiusTop  : (p.r || 0.5),
+          p.radiusBottom !== undefined ? p.radiusBottom : (p.r || 0.5),
+          p.height !== undefined ? p.height : (p.h || 1),
+          p.radialSegments !== undefined ? Math.max(3, p.radialSegments) : 32
         );
         break;
       case 'sphere':
@@ -154,6 +158,53 @@ function buildMeshFromParts(parts: GeomPart[]): {
           Math.max(3, Math.floor(p.radSeg || 32))
         );
         break;
+      case 'bolt_template': {
+        // Rich bolt renderer — emitted by canonical previewBuilder for bolt/screw partTypes
+        // p fields mirror buildBoltProcedural's param() names
+        const boltCode = [
+          `d = ${p.diameter || 8}`,
+          `p = ${p.threadPitch || 1.25}`,
+          `head_h = ${p.headHeight || 5.3}`,
+          `head_w = ${p.headWidthAcrossFlats || 13}`,
+          `washer_od = ${p.washerOD || 17}`,
+          `washer_h = ${p.washerH || 1.6}`,
+          `smooth_len = ${p.smoothLen || (p.length ? p.length * 0.35 : 14)}`,
+          `thread_len = ${p.threadLen || (p.length ? p.length * 0.65 : 26)}`,
+        ].join('\n');
+        // buildBoltProcedural is defined later in this file — call it directly
+        const boltGroup = buildBoltProcedural(boltCode, 'dark', 'aluminum');
+        root.add(boltGroup);
+        // Count verts from boltGroup
+        boltGroup.traverse(obj => {
+          if (obj instanceof THREE.Mesh) {
+            const posAttr2 = obj.geometry.attributes.position;
+            if (posAttr2) vertexCount += posAttr2.count;
+          }
+        });
+        continue;
+      }
+
+      case 'gear_template': {
+        // Rich gear renderer — emitted by canonical previewBuilder for gear_basic partType
+        const gearCode = [
+          `N = ${p.toothCount || 20}`,
+          `m = ${p.module || 2}`,
+          `width = ${p.faceWidth || 10}`,
+          `bore_r = ${(p.boreDiameter || 8) / 2}`,
+          `pitch_r = ${((p.toothCount || 20) * (p.module || 2)) / (2 * Math.PI)}`,
+          `outer_r = ${((p.toothCount || 20) * (p.module || 2)) / (2 * Math.PI) + (p.module || 2) * 1.25}`,
+        ].join('\n');
+        const gearGroup = buildHelicalSpurGearProcedural(gearCode, '', undefined, 'dark', 'aluminum');
+        root.add(gearGroup);
+        gearGroup.traverse(obj => {
+          if (obj instanceof THREE.Mesh) {
+            const posAttr2 = obj.geometry.attributes.position;
+            if (posAttr2) vertexCount += posAttr2.count;
+          }
+        });
+        continue;
+      }
+
       default:
         geo = new THREE.BoxGeometry(1, 1, 1);
     }

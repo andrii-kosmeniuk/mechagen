@@ -11,14 +11,10 @@
  */
 
 
-const { callNemotron } = require('../../lib/ai');
-const {
-  getSpecSystemPrompt,
-  getGeometryPlanSystemPrompt,
-  buildSpecUserMessage,
-  buildBlueprintAwareSpecUserMessage,
-  buildGeometryPlanUserMessage,
-} = require('./aiPrompts');
+const { callAiForJson }    = require('./ai/aiClient');
+const { registry: prompts } = require('./ai/promptRegistry');
+const { normalizePrompt }   = require('./promptNormalizer');
+
 const { validateSpecJson, validateGeometryPlan } = require('../schemas/specSchema');
 const { checkConstraints } = require('./constraintEngine');
 const { validateGeometry }  = require('./validationEngine');
@@ -46,45 +42,6 @@ function listGenerations() {
   return repo.list();
 }
 
-
-async function callAiForJson(systemPromptOverride, userMessage, options = {}) {
-  const combinedPrompt = `SYSTEM INSTRUCTIONS:\n${systemPromptOverride}\n\n---\n\n${userMessage}`;
-
-  let raw;
-  try {
-    raw = await callNemotron(combinedPrompt, options.image || null, {
-      highDetail: false,
-      geometryParts: true,
-    });
-  } catch (err) {
-    throw err;
-  }
-
-  let jsonStr = (raw || '').trim();
-  const start = jsonStr.indexOf('{');
-  const end   = jsonStr.lastIndexOf('}');
-  if (start >= 0 && end > start) jsonStr = jsonStr.slice(start, end + 1);
-
-  let parsed;
-  try {
-    parsed = JSON.parse(jsonStr);
-  } catch (err) {
-    const retryPrompt = `${combinedPrompt}\n\nCRITICAL: Your previous response was not valid JSON. Output ONLY the JSON object, no markdown, no prose, no code fences.`;
-    let raw2;
-    try {
-      raw2 = await callNemotron(retryPrompt, null, { geometryParts: true });
-    } catch (err2) {
-      throw new Error(`AI returned invalid JSON (even after retry): ${err.message}`);
-    }
-    let js2 = (raw2 || '').trim();
-    const s2 = js2.indexOf('{'); const e2 = js2.lastIndexOf('}');
-    if (s2 >= 0 && e2 > s2) js2 = js2.slice(s2, e2 + 1);
-    try { parsed = JSON.parse(js2); }
-    catch { throw new Error('AI returned invalid JSON after retry. Cannot continue.'); }
-  }
-
-  return parsed;
-}
 
 function log(genId, stage, status, extra = {}) {
   console.log(JSON.stringify({ requestId: genId, stage, status, timestamp: new Date().toISOString(), ...extra }));
@@ -159,6 +116,31 @@ async function runPipeline(id, input) {
     }
   }
 
+  // ─── Stage 1c: Prompt normalization ──────────────────────────────────────
+  // Expand short canonical prompts BEFORE the AI sees the text.
+  const normResult = normalizePrompt(input.prompt);
+  if (normResult.normalized) {
+    log(id, 'prompt_normalization', 'applied', {
+      originalPrompt: (input.prompt || '').slice(0, 60),
+      partType: normResult.partType,
+      expandedPrompt: normResult.expandedPrompt.slice(0, 120),
+    });
+    // Augment input with expanded prompt — keep original for record
+    input = {
+      ...input,
+      prompt: normResult.expandedPrompt,
+      _originalPrompt: input.prompt,
+      _normalizedDefaults: normResult.assumedDefaults,
+      manufacturingMode: input.manufacturingMode !== 'unknown' && input.manufacturingMode
+        ? input.manufacturingMode
+        : (normResult.manufacturingMode || input.manufacturingMode),
+    };
+    updateGeneration(id, {
+      normalizedDefaults: normResult.assumedDefaults,
+      originalPrompt: normResult.normalized ? normResult.expandedPrompt : undefined,
+    });
+  }
+
   // ─── Stage 2: Spec generation ─────────────────────────────────────────────
   updateGeneration(id, { status: 'spec_generating' });
   log(id, 'spec_generation', 'started');
@@ -166,10 +148,11 @@ async function runPipeline(id, input) {
   let specJson;
   try {
     const t1 = Date.now();
+    const p = blueprintHints ? prompts.blueprintSpec : prompts.spec;
     const userMessage = blueprintHints
-      ? buildBlueprintAwareSpecUserMessage(input, blueprintHints)
-      : buildSpecUserMessage(input);
-    const rawSpec = await callAiForJson(getSpecSystemPrompt(), userMessage, { image: input.image });
+      ? p.buildUserMessage(input, blueprintHints)
+      : p.buildUserMessage(input);
+    const rawSpec = await callAiForJson(p.system, userMessage, { image: input.image });
     const { value: validatedSpec, errors: specErrors } = validateSpecJson(rawSpec);
     if (!validatedSpec) throw new Error(`Spec validation failed: ${specErrors.join('; ')}`);
     if (specErrors.length > 0) log(id, 'spec_generation', 'schema_warnings', { warnings: specErrors });
@@ -209,7 +192,11 @@ async function runPipeline(id, input) {
   let geometryPlan;
   try {
     const t2 = Date.now();
-    const rawPlan = await callAiForJson(getGeometryPlanSystemPrompt(), buildGeometryPlanUserMessage(specJson), {});
+    const rawPlan = await callAiForJson(
+      prompts.geometryPlan.system,
+      prompts.geometryPlan.buildUserMessage(specJson),
+      {}
+    );
     const { value: validatedPlan, errors: planErrors } = validateGeometryPlan(rawPlan);
     if (!validatedPlan || planErrors.length > 2) throw new Error(`Geometry plan validation failed: ${planErrors.join('; ')}`);
     if (planErrors.length > 0) log(id, 'geometry_planning', 'schema_warnings', { warnings: planErrors });

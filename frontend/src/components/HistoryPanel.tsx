@@ -147,12 +147,45 @@ function GenCard({
           </div>
 
           {/* Prompt snippet */}
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: 6 }}>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: 4 }}>
             {promptSnippet || <em>No prompt</em>}
           </div>
 
+          {/* Validation + confidence row */}
+          {gen.status === 'ready' && (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 5, flexWrap: 'wrap' }}>
+              {gen.validationReport && (
+                <span style={{
+                  fontSize: 8, fontWeight: 700, padding: '1px 5px', borderRadius: 4,
+                  background: gen.validationReport.valid ? 'rgba(74,222,128,0.1)' : 'rgba(251,191,36,0.1)',
+                  border: `1px solid ${gen.validationReport.valid ? 'rgba(74,222,128,0.25)' : 'rgba(251,191,36,0.25)'}`,
+                  color: gen.validationReport.valid ? '#4ade80' : '#fbbf24',
+                }}>
+                  {gen.validationReport.valid ? '✓ VALID' : `⚠ ${gen.validationReport.errors?.length ?? 0} ISSUES`}
+                </span>
+              )}
+              {gen.specJson?.confidence !== undefined && (
+                <span style={{
+                  fontSize: 8, fontWeight: 700, padding: '1px 5px', borderRadius: 4,
+                  background: 'rgba(126,184,247,0.08)', border: '1px solid rgba(126,184,247,0.18)',
+                  color: '#7eb8f7',
+                }}>
+                  {Math.round(gen.specJson.confidence * 100)}% confidence
+                </span>
+              )}
+              {(gen.repairHistory?.length ?? 0) > 0 && (
+                <span style={{
+                  fontSize: 8, fontWeight: 700, padding: '1px 5px', borderRadius: 4,
+                  background: 'rgba(196,181,253,0.08)', border: '1px solid rgba(196,181,253,0.2)',
+                  color: '#c4b5fd',
+                }}>🔧 {gen.repairHistory!.length} repair(s)</span>
+              )}
+            </div>
+          )}
+
           {/* Export badges */}
           {exports.length > 0 && (
+
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 4 }}>
               {exports.map(e => <ExportBadge key={e.id} record={e} />)}
             </div>

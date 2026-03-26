@@ -5,6 +5,7 @@ import { AssumptionsPanel, ValidationPanel } from './PipelinePanels';
 import { PipelineStatusBadge } from './PipelineStatusBadge';
 import { HistoryPanel } from './HistoryPanel';
 import { SolidStatusPanel } from './SolidStatusPanel';
+import { GenerationResultCard } from './GenerationResultCard';
 import { BillingPanel } from './BillingPanel';
 import { UsageDashboard } from './UsageDashboard';
 import { WorkspacePanel } from './WorkspacePanel';
@@ -493,6 +494,11 @@ export function LeftPanel(props: LeftPanelProps) {
               }}>
                 ❌ {props.pipelineError}
               </div>
+            )}
+
+            {/* Result card — shown when ready */}
+            {props.pipelineGeneration?.status === 'ready' && (
+              <GenerationResultCard generation={props.pipelineGeneration} />
             )}
 
             {/* Pipeline form */}

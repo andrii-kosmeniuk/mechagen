@@ -1,16 +1,16 @@
 'use strict';
 
 /**
- * Blueprint Analysis Service — Phase 2
+ * Blueprint Analysis Service — Phase 2 (hardened)
  *
  * Sends a blueprint image to the NVIDIA vision-capable model
- * and returns a structured JSON analysis record.
+ * and returns a structured, schema-validated JSON analysis record.
  *
  * Only operates on previewable images (png/jpg/webp).
- * PDFs return a low-confidence stub record.
+ * PDFs and unpreviewable files return a low-confidence stub record.
  */
 
-const { callNemotron } = require('../../lib/ai');
+const { callNemotron } = require('../../lib/ai');    // kept for image path (aiClient wraps text only)
 const { getBlueprint, readBlueprintFile, setBlueprintAnalysis } = require('./blueprintService');
 
 // ── Schema ─────────────────────────────────────────────────────────────────────

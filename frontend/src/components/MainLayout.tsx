@@ -223,106 +223,21 @@ export function MainLayout({ session, supabase, onSignOut }: Props) {
       showToast('Please enter a prompt first', 'error');
       return;
     }
-    setGenerating(true);
-    setGenError(null);
-    setGeomData(null);
-    try {
-      let sendPrompt = prompt.trim();
-      if (polishBeforeGenerate) {
-        try {
-          const polished = await api.post<{ improvedPrompt?: string }>(
-            '/api/ai/improve-prompt',
-            { prompt: sendPrompt }
-          );
-          const imp = polished?.improvedPrompt?.trim();
-          if (imp && !looksLikeAssistantReply(imp)) sendPrompt = imp;
-        } catch {
-          /* keep original prompt */
-        }
-      }
-      if (looksLikeAssistantReply(sendPrompt)) {
-        showToast(
-          'That text looks like a chat reply, not a part description. Use the prompt box for CAD specs (e.g. M8 hex bolt).',
-          'error'
-        );
-        return;
-      }
-      console.log('[Generate] Sending prompt:', sendPrompt);
-      // Direct fetch — bypasses api helper to avoid silent failures.
-      // Must exceed backend timeout (AI ~3 min + CadQuery ~3 min) so we don't abort before the server does.
-      const GENERATE_TIMEOUT_MS = 8 * 60 * 1000;
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: sendPrompt,
-          highDetail,
-          proceduralParts,
-          context: projectDesc.trim() || undefined,
-          projectName: projectName.trim() || undefined,
-        }),
-        signal: AbortSignal.timeout(GENERATE_TIMEOUT_MS),
-      });
-      console.log('[Generate] Response status:', res.status);
-      const text = await res.text();
-      console.log('[Generate] Raw response:', text.slice(0, 500));
-
-      let data: GeomData & { error?: string };
-      try { data = JSON.parse(text); }
-      catch { throw new Error('Backend returned invalid JSON: ' + text.slice(0, 200)); }
-
-      if (!res.ok) {
-        const errMsg = data.error || `Server error ${res.status}`;
-        throw new Error(errMsg);
-      }
-
-      const hasStl = typeof data.stl === 'string' && data.stl.length > 50;
-      const okCode =
-        typeof data.code === 'string' && data.code.trim().length >= 15;
-      const hasParts =
-        Array.isArray((data as { parts?: unknown }).parts) &&
-        (data as { parts: unknown[] }).parts.length > 0;
-      if (!hasStl && !okCode && !hasParts) {
-        throw new Error('AI returned no usable geometry. Try a different prompt.');
-      }
-
-      console.log(
-        '[Generate] OK —',
-        hasParts
-          ? `parts ${(data as { parts: unknown[] }).parts.length}`
-          : hasStl
-            ? `stl ${data.stl?.length ?? 0} b64 chars`
-            : `code length ${(data as { code: string }).code.length}`
-      );
-      const gen = data as GeomData & { parts?: GeomData['parts'] };
-      setGeomData({
-        code: typeof data.code === 'string' ? data.code : '',
-        stl: hasStl ? data.stl : undefined,
-        name: data.name,
-        description: gen.description,
-        dimensions: gen.dimensions,
-        parts: hasParts ? gen.parts : undefined,
-      });
-      setCurrentPartId(crypto.randomUUID());
+    if (looksLikeAssistantReply(prompt)) {
       showToast(
-        proceduralParts
-          ? '✓ Generated (JSON parts)'
-          : highDetail
-            ? '✓ Generated (high detail)'
-            : '✓ Generated!'
+        'That looks like a chat message. Use the prompt box for part descriptions (e.g. "M8 hex bolt, 40mm").',
+        'error'
       );
-    } catch (e) {
-      const err = e as Error & { name?: string };
-      let msg = err.message || 'Unknown error';
-      if (err.name === 'TimeoutError' || err.name === 'AbortError') {
-        msg = 'Request timed out. Try a shorter prompt or turn off High detail.';
-      }
-      console.error('[Generate] FAILED:', msg);
-      setGenError(msg);
-      showToast(`Generation failed: ${msg}`, 'error');
-    } finally {
-      setGenerating(false);
+      return;
     }
+    // Route through the structured pipeline — same flow as the Pipeline tab
+    await pipeline.generate({
+      prompt: prompt.trim(),
+      context: projectDesc.trim() || undefined,
+      manufacturingMode: 'unknown',
+      highDetail,
+      projectName: projectName.trim() || undefined,
+    });
   };
 
   const onImprovePrompt = async () => {
