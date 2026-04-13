@@ -9,6 +9,12 @@ export interface GeomPart {
   label?: string;
 }
 
+export type TransformState = {
+  translate: { x: string; y: string; z: string };
+  orient: { x: string; y: string; z: string };
+  scale: { x: string; y: string; z: string };
+};
+
 export interface GeomData {
   code: string;
   stl?: string;

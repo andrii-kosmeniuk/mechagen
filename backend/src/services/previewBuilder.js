@@ -523,6 +523,55 @@ function buildPreviewFromPlan(geometryPlan) {
     };
   }
 
+  if (partType === 'bracket') {
+    const armLen = bb.x || 50;
+    const armH = bb.y || 40;
+    const width = bb.z || 30;
+    return {
+      parts: [{
+        shape: 'bracket_template',
+        params: { armLength: armLen, armHeight: armH, depth: width, thickness: 5 },
+        position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, label: 'bracket',
+      }],
+      name: 'bracket (preview)',
+      description: `Procedural L-bracket — ${armLen}x${armH}x${width}mm`,
+      dimensions: { x: armLen, y: armH, z: width },
+    };
+  }
+
+  if (partType === 'mounting_plate' || partType === 'mount_plate') {
+    const width = bb.x || 100;
+    const length = bb.y || 60;
+    const thickness = bb.z || 4;
+    return {
+      parts: [{
+        shape: 'mount_plate_template',
+        params: { width, length, thickness, holeDiameter: 4.3 },
+        position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, label: 'mount_plate',
+      }],
+      name: 'mounting plate (preview)',
+      description: `Procedural mounting plate — ${width}x${length}mm`,
+      dimensions: { x: width, y: length, z: thickness },
+    };
+  }
+
+  if (partType === 'bearing_block' || partType === 'bearing') {
+    const outerD = bb.x || 47;
+    const width = bb.z || 14;
+    const innerStep = (geometryPlan.buildSteps || []).find(s => s.id === 'inner' || s.action === 'create_cylinder');
+    const bore = innerStep?.params?.innerDiameter || 20;
+    return {
+      parts: [{
+        shape: 'bearing_template',
+        params: { outerD, innerD: bore, width },
+        position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, label: 'bearing',
+      }],
+      name: 'bearing (preview)',
+      description: `Procedural bearing — outer Ø${outerD}mm`,
+      dimensions: { x: outerD, y: outerD, z: width },
+    };
+  }
+
   // ── Generic step-by-step builder (all other part types) ──────────────────────
   const allParts = [];
 

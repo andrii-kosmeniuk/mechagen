@@ -10894,5 +10894,2253 @@
     "solidStatus": null,
     "createdAt": "2026-03-26T00:13:50.206Z",
     "updatedAt": "2026-03-26T00:13:50.207Z"
+  },
+  {
+    "id": "gen_1774485571071_2l3zqj",
+    "projectId": "default-project",
+    "prompt": "Wall-mount bracket, M5 holes",
+    "context": "",
+    "imageUrl": null,
+    "status": "ready",
+    "blueprintId": null,
+    "blueprintAnalysis": null,
+    "manufacturingMode": "unknown",
+    "materialPreference": "",
+    "highDetail": false,
+    "specJson": {
+      "version": "1.0",
+      "partType": "bracket",
+      "intentSummary": "A simple L-bracket for wall mounting",
+      "units": "mm",
+      "manufacturingMode": "3d_print",
+      "materialPreference": "PLA",
+      "targetUse": "wall mount",
+      "knownDimensions": {
+        "width": 50,
+        "height": 30,
+        "thickness": 5
+      },
+      "assumedDimensions": {
+        "filletRadius": 2
+      },
+      "constraints": [
+        "must fit M5 screw"
+      ],
+      "features": [
+        "hole",
+        "fillet"
+      ],
+      "missingInformation": [],
+      "riskFlags": [],
+      "confidence": 0.9
+    },
+    "constraintReport": {
+      "isBuildable": true,
+      "severity": "low",
+      "errors": [],
+      "warnings": [
+        "Verify overhangs and support requirements for FDM printing."
+      ],
+      "assumptionsUsed": [
+        "FDM printing assumed — support may be needed for overhangs >45°",
+        "filletRadius=2mm"
+      ],
+      "missingRequiredFields": [],
+      "recommendedQuestions": [],
+      "normalizedSpec": {
+        "partType": "bracket",
+        "units": "mm",
+        "manufacturingMode": "3d_print",
+        "materialPreference": "PLA"
+      }
+    },
+    "geometryPlan": {
+      "version": "1.0",
+      "partType": "bracket",
+      "coordinateSystem": "right_handed_z_up",
+      "boundingBox": {
+        "x": 50,
+        "y": 30,
+        "z": 5
+      },
+      "buildSteps": [
+        {
+          "id": "step_1",
+          "action": "create_box",
+          "description": "base plate",
+          "params": {
+            "width": 50,
+            "length": 30,
+            "height": 5
+          }
+        },
+        {
+          "id": "step_2",
+          "action": "create_hole_pattern",
+          "description": "mounting hole",
+          "params": {
+            "diameter": 5.5,
+            "depth": 5,
+            "positions": [
+              {
+                "x": 10,
+                "y": 15
+              }
+            ]
+          }
+        }
+      ],
+      "notes": "Simple bracket",
+      "criticalDimensions": [],
+      "expectedManufacturingChecks": []
+    },
+    "validationReport": {
+      "valid": true,
+      "severity": "low",
+      "errors": [],
+      "warnings": [
+        {
+          "code": "FDM_OVERHANG_ADVISORY",
+          "message": "FDM printing: overhangs >45° may require support structures",
+          "suggestedFix": "Orient part for minimum support, or add support-friendly chamfers"
+        }
+      ],
+      "checksRun": [
+        "bounding_box_valid",
+        "non_negative_dimensions",
+        "hole_edge_clearance",
+        "min_wall_thickness",
+        "fillet_radius_valid",
+        "self_intersection_estimate",
+        "manufacturing_mode_rules",
+        "exportability_check"
+      ],
+      "repairable": true
+    },
+    "repairHistory": [],
+    "buildMetadata": {
+      "totalDurationMs": 3,
+      "previewPartCount": 2,
+      "validationPassed": true,
+      "repairAttempts": 0,
+      "specConfidence": 0.9,
+      "hadBlueprint": false
+    },
+    "previewParts": [
+      {
+        "shape": "box",
+        "params": {
+          "width": 50,
+          "height": 5,
+          "depth": 5
+        },
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "color": "#7eb8f7",
+        "metalness": 0.75,
+        "roughness": 0.25,
+        "label": "step_1"
+      },
+      {
+        "shape": "cylinder",
+        "params": {
+          "radiusTop": 2.75,
+          "radiusBottom": 2.75,
+          "height": 20
+        },
+        "position": {
+          "x": 10,
+          "y": 15,
+          "z": 15
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "color": "#1a1a2e",
+        "metalness": 0,
+        "roughness": 1,
+        "label": "step_2_hole1"
+      }
+    ],
+    "stlBase64": null,
+    "errorContext": null,
+    "solidRequested": false,
+    "solidStatus": null,
+    "createdAt": "2026-03-26T00:39:31.071Z",
+    "updatedAt": "2026-03-26T00:39:31.078Z"
+  },
+  {
+    "id": "gen_1774485571075_0gl3ex",
+    "projectId": "default-project",
+    "prompt": "A simple bracket",
+    "context": "",
+    "imageUrl": null,
+    "status": "failed",
+    "blueprintId": null,
+    "blueprintAnalysis": null,
+    "manufacturingMode": "unknown",
+    "materialPreference": "",
+    "highDetail": false,
+    "specJson": {
+      "version": "1.0",
+      "partType": "bracket",
+      "intentSummary": "A simple L-bracket for wall mounting",
+      "units": "mm",
+      "manufacturingMode": "3d_print",
+      "materialPreference": "PLA",
+      "targetUse": "wall mount",
+      "knownDimensions": {
+        "width": 50,
+        "height": 30,
+        "thickness": 5
+      },
+      "assumedDimensions": {
+        "filletRadius": 2
+      },
+      "constraints": [
+        "must fit M5 screw"
+      ],
+      "features": [
+        "hole",
+        "fillet"
+      ],
+      "missingInformation": [],
+      "riskFlags": [],
+      "confidence": 0.9
+    },
+    "constraintReport": {
+      "isBuildable": true,
+      "severity": "low",
+      "errors": [],
+      "warnings": [
+        "Verify overhangs and support requirements for FDM printing."
+      ],
+      "assumptionsUsed": [
+        "FDM printing assumed — support may be needed for overhangs >45°",
+        "filletRadius=2mm"
+      ],
+      "missingRequiredFields": [],
+      "recommendedQuestions": [],
+      "normalizedSpec": {
+        "partType": "bracket",
+        "units": "mm",
+        "manufacturingMode": "3d_print",
+        "materialPreference": "PLA"
+      }
+    },
+    "geometryPlan": {
+      "version": "1.0",
+      "partType": "bracket",
+      "intentSummary": "A simple L-bracket for wall mounting",
+      "units": "mm",
+      "manufacturingMode": "3d_print",
+      "materialPreference": "PLA",
+      "targetUse": "wall mount",
+      "knownDimensions": {
+        "width": 50,
+        "height": 30,
+        "thickness": 5
+      },
+      "assumedDimensions": {
+        "filletRadius": 2
+      },
+      "constraints": [
+        "must fit M5 screw"
+      ],
+      "features": [
+        "hole",
+        "fillet"
+      ],
+      "missingInformation": [],
+      "riskFlags": [],
+      "confidence": 0.9,
+      "coordinateSystem": "right_handed_z_up"
+    },
+    "validationReport": null,
+    "repairHistory": [],
+    "buildMetadata": {},
+    "previewParts": null,
+    "stlBase64": null,
+    "errorContext": "Geometry planning failed: Cannot read properties of undefined (reading 'length')",
+    "solidRequested": false,
+    "solidStatus": null,
+    "createdAt": "2026-03-26T00:39:31.075Z",
+    "updatedAt": "2026-03-26T00:39:31.078Z"
+  },
+  {
+    "id": "gen_1774485571075_wv1gof",
+    "projectId": "default-project",
+    "prompt": "bracket",
+    "context": "",
+    "imageUrl": null,
+    "status": "ready",
+    "blueprintId": null,
+    "blueprintAnalysis": null,
+    "manufacturingMode": "3d_print",
+    "materialPreference": "PLA",
+    "highDetail": true,
+    "specJson": {
+      "version": "1.0",
+      "partType": "bracket",
+      "intentSummary": "L-bracket 50×40mm",
+      "units": "mm",
+      "manufacturingMode": "3d_print",
+      "targetUse": "structural mounting",
+      "knownDimensions": {
+        "horizontalArmLength": 50,
+        "verticalArmHeight": 40
+      },
+      "assumedDimensions": {
+        "width": 30,
+        "thickness": 5,
+        "filletRadius": 3,
+        "holeSize": "M5",
+        "holesPerArm": 2
+      },
+      "constraints": [
+        "printable without supports if oriented correctly",
+        "standard mounting hole pattern"
+      ],
+      "features": [
+        "horizontal_arm",
+        "vertical_arm",
+        "fillet_corner",
+        "mounting_holes"
+      ],
+      "missingInformation": [],
+      "riskFlags": [],
+      "confidence": 0.95
+    },
+    "constraintReport": {
+      "isBuildable": true,
+      "severity": "low",
+      "errors": [],
+      "warnings": [
+        "Material preference not specified. Assuming general-purpose structural material.",
+        "Verify overhangs and support requirements for FDM printing."
+      ],
+      "assumptionsUsed": [
+        "FDM printing assumed — support may be needed for overhangs >45°",
+        "width=30mm",
+        "thickness=5mm",
+        "filletRadius=3mm",
+        "holeSize=M5",
+        "holesPerArm=2mm"
+      ],
+      "missingRequiredFields": [],
+      "recommendedQuestions": [
+        "What material should be used? (e.g. PETG, aluminum 6061, steel)"
+      ],
+      "normalizedSpec": {
+        "partType": "bracket",
+        "units": "mm",
+        "manufacturingMode": "3d_print",
+        "materialPreference": "unspecified"
+      }
+    },
+    "geometryPlan": {
+      "version": "1.0",
+      "partType": "bracket",
+      "coordinateSystem": "right_handed_z_up",
+      "buildSteps": [
+        {
+          "id": "h_arm",
+          "action": "create_plate",
+          "params": {
+            "width": 50,
+            "depth": 30,
+            "thickness": 5
+          }
+        },
+        {
+          "id": "v_arm",
+          "action": "create_plate",
+          "params": {
+            "width": 5,
+            "depth": 30,
+            "thickness": 40
+          }
+        },
+        {
+          "id": "fillet",
+          "action": "join_perpendicular",
+          "params": {
+            "filletRadius": 3,
+            "axis": "y"
+          }
+        },
+        {
+          "id": "h_holes",
+          "action": "create_hole_pattern",
+          "params": {
+            "count": 2,
+            "diameter": 5.2,
+            "positions": [
+              {
+                "x": 12.5,
+                "y": 4.6
+              },
+              {
+                "x": 37.5,
+                "y": 4.6
+              }
+            ]
+          }
+        },
+        {
+          "id": "v_holes",
+          "action": "create_hole_pattern",
+          "params": {
+            "count": 2,
+            "diameter": 5.2,
+            "positions": [
+              {
+                "x": 4.6,
+                "y": 10
+              },
+              {
+                "x": 4.6,
+                "y": 30
+              }
+            ]
+          }
+        }
+      ],
+      "boundingBox": {
+        "x": 50,
+        "y": 40,
+        "z": 30
+      },
+      "criticalDimensions": [
+        "horizontalArmLength",
+        "verticalArmHeight",
+        "thickness"
+      ]
+    },
+    "validationReport": {
+      "valid": false,
+      "severity": "high",
+      "errors": [
+        {
+          "code": "EDGE_CLEARANCE_TOO_SMALL",
+          "message": "Step \"h_holes\": hole at y=4.6 is too close to the edge",
+          "stepId": "h_holes",
+          "suggestedFix": "Move hole inward so there is at least 4.6mm from the edge"
+        },
+        {
+          "code": "EDGE_CLEARANCE_TOO_SMALL",
+          "message": "Step \"h_holes\": hole at y=4.6 is too close to the edge",
+          "stepId": "h_holes",
+          "suggestedFix": "Move hole inward so there is at least 4.6mm from the edge"
+        },
+        {
+          "code": "EDGE_CLEARANCE_TOO_SMALL",
+          "message": "Step \"v_holes\": hole at x=4.6 is too close to the edge (need 4.6mm clearance)",
+          "stepId": "v_holes",
+          "suggestedFix": "Move hole inward by at least 2mm"
+        },
+        {
+          "code": "EDGE_CLEARANCE_TOO_SMALL",
+          "message": "Step \"v_holes\": hole at x=4.6 is too close to the edge (need 4.6mm clearance)",
+          "stepId": "v_holes",
+          "suggestedFix": "Move hole inward by at least 2mm"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "FDM_OVERHANG_ADVISORY",
+          "message": "FDM printing: overhangs >45° may require support structures",
+          "suggestedFix": "Orient part for minimum support, or add support-friendly chamfers"
+        }
+      ],
+      "checksRun": [
+        "bounding_box_valid",
+        "non_negative_dimensions",
+        "hole_edge_clearance",
+        "min_wall_thickness",
+        "fillet_radius_valid",
+        "self_intersection_estimate",
+        "manufacturing_mode_rules",
+        "exportability_check"
+      ],
+      "repairable": true
+    },
+    "repairHistory": [
+      {
+        "repairAttempt": 1,
+        "changesApplied": [
+          "Step h_holes: moved hole positions inward to maintain 2mm edge clearance",
+          "Step v_holes: moved hole positions inward to maintain 2mm edge clearance"
+        ],
+        "resultStatus": "revalidated",
+        "updatedGeometryPlan": {
+          "version": "1.0",
+          "partType": "bracket",
+          "coordinateSystem": "right_handed_z_up",
+          "buildSteps": [
+            {
+              "id": "h_arm",
+              "action": "create_plate",
+              "params": {
+                "width": 50,
+                "depth": 30,
+                "thickness": 5
+              }
+            },
+            {
+              "id": "v_arm",
+              "action": "create_plate",
+              "params": {
+                "width": 5,
+                "depth": 30,
+                "thickness": 40
+              }
+            },
+            {
+              "id": "fillet",
+              "action": "join_perpendicular",
+              "params": {
+                "filletRadius": 3,
+                "axis": "y"
+              }
+            },
+            {
+              "id": "h_holes",
+              "action": "create_hole_pattern",
+              "params": {
+                "count": 2,
+                "diameter": 5.2,
+                "positions": [
+                  {
+                    "x": 12.5,
+                    "y": 4.6
+                  },
+                  {
+                    "x": 37.5,
+                    "y": 4.6
+                  }
+                ]
+              }
+            },
+            {
+              "id": "v_holes",
+              "action": "create_hole_pattern",
+              "params": {
+                "count": 2,
+                "diameter": 5.2,
+                "positions": [
+                  {
+                    "x": 4.6,
+                    "y": 10
+                  },
+                  {
+                    "x": 4.6,
+                    "y": 30
+                  }
+                ]
+              }
+            }
+          ],
+          "boundingBox": {
+            "x": 50,
+            "y": 40,
+            "z": 30
+          },
+          "criticalDimensions": [
+            "horizontalArmLength",
+            "verticalArmHeight",
+            "thickness"
+          ]
+        }
+      },
+      {
+        "repairAttempt": 2,
+        "changesApplied": [],
+        "resultStatus": "needs_ai",
+        "updatedGeometryPlan": {
+          "version": "1.0",
+          "partType": "bracket",
+          "coordinateSystem": "right_handed_z_up",
+          "buildSteps": [
+            {
+              "id": "h_arm",
+              "action": "create_plate",
+              "params": {
+                "width": 50,
+                "depth": 30,
+                "thickness": 5
+              }
+            },
+            {
+              "id": "v_arm",
+              "action": "create_plate",
+              "params": {
+                "width": 5,
+                "depth": 30,
+                "thickness": 40
+              }
+            },
+            {
+              "id": "fillet",
+              "action": "join_perpendicular",
+              "params": {
+                "filletRadius": 3,
+                "axis": "y"
+              }
+            },
+            {
+              "id": "h_holes",
+              "action": "create_hole_pattern",
+              "params": {
+                "count": 2,
+                "diameter": 5.2,
+                "positions": [
+                  {
+                    "x": 12.5,
+                    "y": 4.6
+                  },
+                  {
+                    "x": 37.5,
+                    "y": 4.6
+                  }
+                ]
+              }
+            },
+            {
+              "id": "v_holes",
+              "action": "create_hole_pattern",
+              "params": {
+                "count": 2,
+                "diameter": 5.2,
+                "positions": [
+                  {
+                    "x": 4.6,
+                    "y": 10
+                  },
+                  {
+                    "x": 4.6,
+                    "y": 30
+                  }
+                ]
+              }
+            }
+          ],
+          "boundingBox": {
+            "x": 50,
+            "y": 40,
+            "z": 30
+          },
+          "criticalDimensions": [
+            "horizontalArmLength",
+            "verticalArmHeight",
+            "thickness"
+          ]
+        }
+      }
+    ],
+    "buildMetadata": {
+      "totalDurationMs": 2,
+      "previewPartCount": 7,
+      "validationPassed": false,
+      "repairAttempts": 2,
+      "specConfidence": 0.95,
+      "hadBlueprint": false
+    },
+    "previewParts": [
+      {
+        "shape": "box",
+        "params": {
+          "width": 50,
+          "height": 5,
+          "depth": 30
+        },
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "color": "#7eb8f7",
+        "metalness": 0.75,
+        "roughness": 0.25,
+        "label": "h_arm"
+      },
+      {
+        "shape": "box",
+        "params": {
+          "width": 5,
+          "height": 40,
+          "depth": 30
+        },
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 25
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "color": "#7eb8f7",
+        "metalness": 0.75,
+        "roughness": 0.25,
+        "label": "v_arm"
+      },
+      {
+        "shape": "cylinder",
+        "params": {
+          "radiusTop": 3,
+          "radiusBottom": 3,
+          "height": 40
+        },
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 48
+        },
+        "rotation": {
+          "x": 1.5707963267948966,
+          "y": 0,
+          "z": 0
+        },
+        "color": "#7eb8f799",
+        "metalness": 0.75,
+        "roughness": 0.35,
+        "label": "fillet"
+      },
+      {
+        "shape": "cylinder",
+        "params": {
+          "radiusTop": 2.6,
+          "radiusBottom": 2.6,
+          "height": 20
+        },
+        "position": {
+          "x": 2.5,
+          "y": 0,
+          "z": 55
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "color": "#1a1a2e",
+        "metalness": 0,
+        "roughness": 1,
+        "label": "h_holes_hole1"
+      },
+      {
+        "shape": "cylinder",
+        "params": {
+          "radiusTop": 2.6,
+          "radiusBottom": 2.6,
+          "height": 20
+        },
+        "position": {
+          "x": 27.5,
+          "y": 0,
+          "z": 55
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "color": "#1a1a2e",
+        "metalness": 0,
+        "roughness": 1,
+        "label": "h_holes_hole2"
+      },
+      {
+        "shape": "cylinder",
+        "params": {
+          "radiusTop": 2.6,
+          "radiusBottom": 2.6,
+          "height": 20
+        },
+        "position": {
+          "x": -10,
+          "y": 10,
+          "z": 55
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "color": "#1a1a2e",
+        "metalness": 0,
+        "roughness": 1,
+        "label": "v_holes_hole1"
+      },
+      {
+        "shape": "cylinder",
+        "params": {
+          "radiusTop": 2.6,
+          "radiusBottom": 2.6,
+          "height": 20
+        },
+        "position": {
+          "x": 10,
+          "y": 30,
+          "z": 55
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "color": "#1a1a2e",
+        "metalness": 0,
+        "roughness": 1,
+        "label": "v_holes_hole2"
+      }
+    ],
+    "stlBase64": null,
+    "errorContext": null,
+    "solidRequested": false,
+    "solidStatus": null,
+    "createdAt": "2026-03-26T00:39:31.075Z",
+    "updatedAt": "2026-03-26T00:39:31.077Z",
+    "normalizedDefaults": {
+      "armLength": 50,
+      "armHeight": 40,
+      "width": 30,
+      "thickness": 5,
+      "fillet": 3,
+      "holeSize": "M5",
+      "holesPerArm": 2
+    }
+  },
+  {
+    "id": "gen_1774485571077_s3qqbt",
+    "projectId": "default-project",
+    "prompt": "Simple L-bracket with M5 holes",
+    "context": "",
+    "imageUrl": null,
+    "status": "ready",
+    "blueprintId": null,
+    "blueprintAnalysis": null,
+    "manufacturingMode": "unknown",
+    "materialPreference": "",
+    "highDetail": false,
+    "specJson": {
+      "version": "1.0",
+      "partType": "bracket",
+      "intentSummary": "A simple L-bracket for wall mounting",
+      "units": "mm",
+      "manufacturingMode": "3d_print",
+      "materialPreference": "PLA",
+      "targetUse": "wall mount",
+      "knownDimensions": {
+        "width": 50,
+        "height": 30,
+        "thickness": 5
+      },
+      "assumedDimensions": {
+        "filletRadius": 2
+      },
+      "constraints": [
+        "must fit M5 screw"
+      ],
+      "features": [
+        "hole",
+        "fillet"
+      ],
+      "missingInformation": [],
+      "riskFlags": [],
+      "confidence": 0.9
+    },
+    "constraintReport": {
+      "isBuildable": true,
+      "severity": "low",
+      "errors": [],
+      "warnings": [
+        "Verify overhangs and support requirements for FDM printing."
+      ],
+      "assumptionsUsed": [
+        "FDM printing assumed — support may be needed for overhangs >45°",
+        "filletRadius=2mm"
+      ],
+      "missingRequiredFields": [],
+      "recommendedQuestions": [],
+      "normalizedSpec": {
+        "partType": "bracket",
+        "units": "mm",
+        "manufacturingMode": "3d_print",
+        "materialPreference": "PLA"
+      }
+    },
+    "geometryPlan": {
+      "version": "1.0",
+      "partType": "bracket",
+      "coordinateSystem": "right_handed_z_up",
+      "boundingBox": {
+        "x": 50,
+        "y": 30,
+        "z": 5
+      },
+      "buildSteps": [
+        {
+          "id": "step_1",
+          "action": "create_box",
+          "description": "base plate",
+          "params": {
+            "width": 50,
+            "length": 30,
+            "height": 5
+          }
+        },
+        {
+          "id": "step_2",
+          "action": "create_hole_pattern",
+          "description": "mounting hole",
+          "params": {
+            "diameter": 5.5,
+            "depth": 5,
+            "positions": [
+              {
+                "x": 10,
+                "y": 15
+              }
+            ]
+          }
+        }
+      ],
+      "notes": "Simple bracket",
+      "criticalDimensions": [],
+      "expectedManufacturingChecks": []
+    },
+    "validationReport": {
+      "valid": true,
+      "severity": "low",
+      "errors": [],
+      "warnings": [
+        {
+          "code": "FDM_OVERHANG_ADVISORY",
+          "message": "FDM printing: overhangs >45° may require support structures",
+          "suggestedFix": "Orient part for minimum support, or add support-friendly chamfers"
+        }
+      ],
+      "checksRun": [
+        "bounding_box_valid",
+        "non_negative_dimensions",
+        "hole_edge_clearance",
+        "min_wall_thickness",
+        "fillet_radius_valid",
+        "self_intersection_estimate",
+        "manufacturing_mode_rules",
+        "exportability_check"
+      ],
+      "repairable": true
+    },
+    "repairHistory": [],
+    "buildMetadata": {
+      "totalDurationMs": 1,
+      "previewPartCount": 2,
+      "validationPassed": true,
+      "repairAttempts": 0,
+      "specConfidence": 0.9,
+      "hadBlueprint": false
+    },
+    "previewParts": [
+      {
+        "shape": "box",
+        "params": {
+          "width": 50,
+          "height": 5,
+          "depth": 5
+        },
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "color": "#7eb8f7",
+        "metalness": 0.75,
+        "roughness": 0.25,
+        "label": "step_1"
+      },
+      {
+        "shape": "cylinder",
+        "params": {
+          "radiusTop": 2.75,
+          "radiusBottom": 2.75,
+          "height": 20
+        },
+        "position": {
+          "x": 10,
+          "y": 15,
+          "z": 15
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "color": "#1a1a2e",
+        "metalness": 0,
+        "roughness": 1,
+        "label": "step_2_hole1"
+      }
+    ],
+    "stlBase64": null,
+    "errorContext": null,
+    "solidRequested": false,
+    "solidStatus": null,
+    "createdAt": "2026-03-26T00:39:31.077Z",
+    "updatedAt": "2026-03-26T00:39:31.078Z"
+  },
+  {
+    "id": "gen_1774485571178_j2lzrr",
+    "projectId": "default-project",
+    "prompt": "",
+    "context": "",
+    "imageUrl": null,
+    "status": "failed",
+    "blueprintId": null,
+    "blueprintAnalysis": null,
+    "manufacturingMode": "unknown",
+    "materialPreference": "",
+    "highDetail": false,
+    "specJson": null,
+    "constraintReport": null,
+    "geometryPlan": null,
+    "validationReport": null,
+    "repairHistory": [],
+    "buildMetadata": {},
+    "previewParts": null,
+    "stlBase64": null,
+    "errorContext": "No prompt, image, or blueprint provided",
+    "solidRequested": false,
+    "solidStatus": null,
+    "createdAt": "2026-03-26T00:39:31.178Z",
+    "updatedAt": "2026-03-26T00:39:31.178Z"
+  },
+  {
+    "id": "gen_1774485571382_kvijvk",
+    "projectId": "default-project",
+    "prompt": "test part",
+    "context": "",
+    "imageUrl": null,
+    "status": "ready",
+    "blueprintId": null,
+    "blueprintAnalysis": null,
+    "manufacturingMode": "unknown",
+    "materialPreference": "",
+    "highDetail": false,
+    "specJson": {
+      "version": "1.0",
+      "partType": "bracket",
+      "intentSummary": "A simple L-bracket for wall mounting",
+      "units": "mm",
+      "manufacturingMode": "3d_print",
+      "materialPreference": "PLA",
+      "targetUse": "wall mount",
+      "knownDimensions": {
+        "width": 50,
+        "height": 30,
+        "thickness": 5
+      },
+      "assumedDimensions": {
+        "filletRadius": 2
+      },
+      "constraints": [
+        "must fit M5 screw"
+      ],
+      "features": [
+        "hole",
+        "fillet"
+      ],
+      "missingInformation": [],
+      "riskFlags": [],
+      "confidence": 0.9
+    },
+    "constraintReport": {
+      "isBuildable": true,
+      "severity": "low",
+      "errors": [],
+      "warnings": [
+        "Verify overhangs and support requirements for FDM printing."
+      ],
+      "assumptionsUsed": [
+        "FDM printing assumed — support may be needed for overhangs >45°",
+        "filletRadius=2mm"
+      ],
+      "missingRequiredFields": [],
+      "recommendedQuestions": [],
+      "normalizedSpec": {
+        "partType": "bracket",
+        "units": "mm",
+        "manufacturingMode": "3d_print",
+        "materialPreference": "PLA"
+      }
+    },
+    "geometryPlan": {
+      "version": "1.0",
+      "partType": "bracket",
+      "coordinateSystem": "right_handed_z_up",
+      "boundingBox": {
+        "x": 50,
+        "y": 30,
+        "z": 5
+      },
+      "buildSteps": [
+        {
+          "id": "step_1",
+          "action": "create_box",
+          "description": "base plate",
+          "params": {
+            "width": 50,
+            "length": 30,
+            "height": 5
+          }
+        },
+        {
+          "id": "step_2",
+          "action": "create_hole_pattern",
+          "description": "mounting hole",
+          "params": {
+            "diameter": 5.5,
+            "depth": 5,
+            "positions": [
+              {
+                "x": 10,
+                "y": 15
+              }
+            ]
+          }
+        }
+      ],
+      "notes": "Simple bracket",
+      "criticalDimensions": [],
+      "expectedManufacturingChecks": []
+    },
+    "validationReport": {
+      "valid": true,
+      "severity": "low",
+      "errors": [],
+      "warnings": [
+        {
+          "code": "FDM_OVERHANG_ADVISORY",
+          "message": "FDM printing: overhangs >45° may require support structures",
+          "suggestedFix": "Orient part for minimum support, or add support-friendly chamfers"
+        }
+      ],
+      "checksRun": [
+        "bounding_box_valid",
+        "non_negative_dimensions",
+        "hole_edge_clearance",
+        "min_wall_thickness",
+        "fillet_radius_valid",
+        "self_intersection_estimate",
+        "manufacturing_mode_rules",
+        "exportability_check"
+      ],
+      "repairable": true
+    },
+    "repairHistory": [],
+    "buildMetadata": {
+      "totalDurationMs": 2,
+      "previewPartCount": 2,
+      "validationPassed": true,
+      "repairAttempts": 0,
+      "specConfidence": 0.9,
+      "hadBlueprint": false
+    },
+    "previewParts": [
+      {
+        "shape": "box",
+        "params": {
+          "width": 50,
+          "height": 5,
+          "depth": 5
+        },
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "color": "#7eb8f7",
+        "metalness": 0.75,
+        "roughness": 0.25,
+        "label": "step_1"
+      },
+      {
+        "shape": "cylinder",
+        "params": {
+          "radiusTop": 2.75,
+          "radiusBottom": 2.75,
+          "height": 20
+        },
+        "position": {
+          "x": 10,
+          "y": 15,
+          "z": 15
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "color": "#1a1a2e",
+        "metalness": 0,
+        "roughness": 1,
+        "label": "step_2_hole1"
+      }
+    ],
+    "stlBase64": null,
+    "errorContext": null,
+    "solidRequested": false,
+    "solidStatus": null,
+    "createdAt": "2026-03-26T00:39:31.382Z",
+    "updatedAt": "2026-03-26T00:39:31.384Z"
+  },
+  {
+    "id": "gen_1774532033443_yu7c7w",
+    "projectId": "default-project",
+    "prompt": "Wall-mount bracket, M5 holes",
+    "context": "",
+    "imageUrl": null,
+    "status": "ready",
+    "blueprintId": null,
+    "blueprintAnalysis": null,
+    "manufacturingMode": "unknown",
+    "materialPreference": "",
+    "highDetail": false,
+    "specJson": {
+      "version": "1.0",
+      "partType": "bracket",
+      "intentSummary": "A simple L-bracket for wall mounting",
+      "units": "mm",
+      "manufacturingMode": "3d_print",
+      "materialPreference": "PLA",
+      "targetUse": "wall mount",
+      "knownDimensions": {
+        "width": 50,
+        "height": 30,
+        "thickness": 5
+      },
+      "assumedDimensions": {
+        "filletRadius": 2
+      },
+      "constraints": [
+        "must fit M5 screw"
+      ],
+      "features": [
+        "hole",
+        "fillet"
+      ],
+      "missingInformation": [],
+      "riskFlags": [],
+      "confidence": 0.9
+    },
+    "constraintReport": {
+      "isBuildable": true,
+      "severity": "low",
+      "errors": [],
+      "warnings": [
+        "Verify overhangs and support requirements for FDM printing."
+      ],
+      "assumptionsUsed": [
+        "FDM printing assumed — support may be needed for overhangs >45°",
+        "filletRadius=2mm"
+      ],
+      "missingRequiredFields": [],
+      "recommendedQuestions": [],
+      "normalizedSpec": {
+        "partType": "bracket",
+        "units": "mm",
+        "manufacturingMode": "3d_print",
+        "materialPreference": "PLA"
+      }
+    },
+    "geometryPlan": {
+      "version": "1.0",
+      "partType": "bracket",
+      "coordinateSystem": "right_handed_z_up",
+      "boundingBox": {
+        "x": 50,
+        "y": 30,
+        "z": 5
+      },
+      "buildSteps": [
+        {
+          "id": "step_1",
+          "action": "create_box",
+          "description": "base plate",
+          "params": {
+            "width": 50,
+            "length": 30,
+            "height": 5
+          }
+        },
+        {
+          "id": "step_2",
+          "action": "create_hole_pattern",
+          "description": "mounting hole",
+          "params": {
+            "diameter": 5.5,
+            "depth": 5,
+            "positions": [
+              {
+                "x": 10,
+                "y": 15
+              }
+            ]
+          }
+        }
+      ],
+      "notes": "Simple bracket",
+      "criticalDimensions": [],
+      "expectedManufacturingChecks": []
+    },
+    "validationReport": {
+      "valid": true,
+      "severity": "low",
+      "errors": [],
+      "warnings": [
+        {
+          "code": "FDM_OVERHANG_ADVISORY",
+          "message": "FDM printing: overhangs >45° may require support structures",
+          "suggestedFix": "Orient part for minimum support, or add support-friendly chamfers"
+        }
+      ],
+      "checksRun": [
+        "bounding_box_valid",
+        "non_negative_dimensions",
+        "hole_edge_clearance",
+        "min_wall_thickness",
+        "fillet_radius_valid",
+        "self_intersection_estimate",
+        "manufacturing_mode_rules",
+        "exportability_check"
+      ],
+      "repairable": true
+    },
+    "repairHistory": [],
+    "buildMetadata": {
+      "totalDurationMs": 4,
+      "previewPartCount": 1,
+      "validationPassed": true,
+      "repairAttempts": 0,
+      "specConfidence": 0.9,
+      "hadBlueprint": false
+    },
+    "previewParts": [
+      {
+        "shape": "bracket_template",
+        "params": {
+          "armLength": 50,
+          "armHeight": 30,
+          "depth": 5,
+          "thickness": 5
+        },
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "label": "bracket"
+      }
+    ],
+    "stlBase64": null,
+    "errorContext": null,
+    "solidRequested": false,
+    "solidStatus": null,
+    "createdAt": "2026-03-26T13:33:53.443Z",
+    "updatedAt": "2026-03-26T13:33:53.450Z"
+  },
+  {
+    "id": "gen_1774532033447_6j3lh9",
+    "projectId": "default-project",
+    "prompt": "A simple bracket",
+    "context": "",
+    "imageUrl": null,
+    "status": "failed",
+    "blueprintId": null,
+    "blueprintAnalysis": null,
+    "manufacturingMode": "unknown",
+    "materialPreference": "",
+    "highDetail": false,
+    "specJson": {
+      "version": "1.0",
+      "partType": "bracket",
+      "intentSummary": "A simple L-bracket for wall mounting",
+      "units": "mm",
+      "manufacturingMode": "3d_print",
+      "materialPreference": "PLA",
+      "targetUse": "wall mount",
+      "knownDimensions": {
+        "width": 50,
+        "height": 30,
+        "thickness": 5
+      },
+      "assumedDimensions": {
+        "filletRadius": 2
+      },
+      "constraints": [
+        "must fit M5 screw"
+      ],
+      "features": [
+        "hole",
+        "fillet"
+      ],
+      "missingInformation": [],
+      "riskFlags": [],
+      "confidence": 0.9
+    },
+    "constraintReport": {
+      "isBuildable": true,
+      "severity": "low",
+      "errors": [],
+      "warnings": [
+        "Verify overhangs and support requirements for FDM printing."
+      ],
+      "assumptionsUsed": [
+        "FDM printing assumed — support may be needed for overhangs >45°",
+        "filletRadius=2mm"
+      ],
+      "missingRequiredFields": [],
+      "recommendedQuestions": [],
+      "normalizedSpec": {
+        "partType": "bracket",
+        "units": "mm",
+        "manufacturingMode": "3d_print",
+        "materialPreference": "PLA"
+      }
+    },
+    "geometryPlan": {
+      "version": "1.0",
+      "partType": "bracket",
+      "intentSummary": "A simple L-bracket for wall mounting",
+      "units": "mm",
+      "manufacturingMode": "3d_print",
+      "materialPreference": "PLA",
+      "targetUse": "wall mount",
+      "knownDimensions": {
+        "width": 50,
+        "height": 30,
+        "thickness": 5
+      },
+      "assumedDimensions": {
+        "filletRadius": 2
+      },
+      "constraints": [
+        "must fit M5 screw"
+      ],
+      "features": [
+        "hole",
+        "fillet"
+      ],
+      "missingInformation": [],
+      "riskFlags": [],
+      "confidence": 0.9,
+      "coordinateSystem": "right_handed_z_up"
+    },
+    "validationReport": null,
+    "repairHistory": [],
+    "buildMetadata": {},
+    "previewParts": null,
+    "stlBase64": null,
+    "errorContext": "Geometry planning failed: Cannot read properties of undefined (reading 'length')",
+    "solidRequested": false,
+    "solidStatus": null,
+    "createdAt": "2026-03-26T13:33:53.447Z",
+    "updatedAt": "2026-03-26T13:33:53.450Z"
+  },
+  {
+    "id": "gen_1774532033447_tuco7z",
+    "projectId": "default-project",
+    "prompt": "bracket",
+    "context": "",
+    "imageUrl": null,
+    "status": "ready",
+    "blueprintId": null,
+    "blueprintAnalysis": null,
+    "manufacturingMode": "3d_print",
+    "materialPreference": "PLA",
+    "highDetail": true,
+    "specJson": {
+      "version": "1.0",
+      "partType": "bracket",
+      "intentSummary": "L-bracket 50×40mm",
+      "units": "mm",
+      "manufacturingMode": "3d_print",
+      "targetUse": "structural mounting",
+      "knownDimensions": {
+        "horizontalArmLength": 50,
+        "verticalArmHeight": 40
+      },
+      "assumedDimensions": {
+        "width": 30,
+        "thickness": 5,
+        "filletRadius": 3,
+        "holeSize": "M5",
+        "holesPerArm": 2
+      },
+      "constraints": [
+        "printable without supports if oriented correctly",
+        "standard mounting hole pattern"
+      ],
+      "features": [
+        "horizontal_arm",
+        "vertical_arm",
+        "fillet_corner",
+        "mounting_holes"
+      ],
+      "missingInformation": [],
+      "riskFlags": [],
+      "confidence": 0.95
+    },
+    "constraintReport": {
+      "isBuildable": true,
+      "severity": "low",
+      "errors": [],
+      "warnings": [
+        "Material preference not specified. Assuming general-purpose structural material.",
+        "Verify overhangs and support requirements for FDM printing."
+      ],
+      "assumptionsUsed": [
+        "FDM printing assumed — support may be needed for overhangs >45°",
+        "width=30mm",
+        "thickness=5mm",
+        "filletRadius=3mm",
+        "holeSize=M5",
+        "holesPerArm=2mm"
+      ],
+      "missingRequiredFields": [],
+      "recommendedQuestions": [
+        "What material should be used? (e.g. PETG, aluminum 6061, steel)"
+      ],
+      "normalizedSpec": {
+        "partType": "bracket",
+        "units": "mm",
+        "manufacturingMode": "3d_print",
+        "materialPreference": "unspecified"
+      }
+    },
+    "geometryPlan": {
+      "version": "1.0",
+      "partType": "bracket",
+      "coordinateSystem": "right_handed_z_up",
+      "buildSteps": [
+        {
+          "id": "h_arm",
+          "action": "create_plate",
+          "params": {
+            "width": 50,
+            "depth": 30,
+            "thickness": 5
+          }
+        },
+        {
+          "id": "v_arm",
+          "action": "create_plate",
+          "params": {
+            "width": 5,
+            "depth": 30,
+            "thickness": 40
+          }
+        },
+        {
+          "id": "fillet",
+          "action": "join_perpendicular",
+          "params": {
+            "filletRadius": 3,
+            "axis": "y"
+          }
+        },
+        {
+          "id": "h_holes",
+          "action": "create_hole_pattern",
+          "params": {
+            "count": 2,
+            "diameter": 5.2,
+            "positions": [
+              {
+                "x": 12.5,
+                "y": 4.6
+              },
+              {
+                "x": 37.5,
+                "y": 4.6
+              }
+            ]
+          }
+        },
+        {
+          "id": "v_holes",
+          "action": "create_hole_pattern",
+          "params": {
+            "count": 2,
+            "diameter": 5.2,
+            "positions": [
+              {
+                "x": 4.6,
+                "y": 10
+              },
+              {
+                "x": 4.6,
+                "y": 30
+              }
+            ]
+          }
+        }
+      ],
+      "boundingBox": {
+        "x": 50,
+        "y": 40,
+        "z": 30
+      },
+      "criticalDimensions": [
+        "horizontalArmLength",
+        "verticalArmHeight",
+        "thickness"
+      ]
+    },
+    "validationReport": {
+      "valid": false,
+      "severity": "high",
+      "errors": [
+        {
+          "code": "EDGE_CLEARANCE_TOO_SMALL",
+          "message": "Step \"h_holes\": hole at y=4.6 is too close to the edge",
+          "stepId": "h_holes",
+          "suggestedFix": "Move hole inward so there is at least 4.6mm from the edge"
+        },
+        {
+          "code": "EDGE_CLEARANCE_TOO_SMALL",
+          "message": "Step \"h_holes\": hole at y=4.6 is too close to the edge",
+          "stepId": "h_holes",
+          "suggestedFix": "Move hole inward so there is at least 4.6mm from the edge"
+        },
+        {
+          "code": "EDGE_CLEARANCE_TOO_SMALL",
+          "message": "Step \"v_holes\": hole at x=4.6 is too close to the edge (need 4.6mm clearance)",
+          "stepId": "v_holes",
+          "suggestedFix": "Move hole inward by at least 2mm"
+        },
+        {
+          "code": "EDGE_CLEARANCE_TOO_SMALL",
+          "message": "Step \"v_holes\": hole at x=4.6 is too close to the edge (need 4.6mm clearance)",
+          "stepId": "v_holes",
+          "suggestedFix": "Move hole inward by at least 2mm"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "FDM_OVERHANG_ADVISORY",
+          "message": "FDM printing: overhangs >45° may require support structures",
+          "suggestedFix": "Orient part for minimum support, or add support-friendly chamfers"
+        }
+      ],
+      "checksRun": [
+        "bounding_box_valid",
+        "non_negative_dimensions",
+        "hole_edge_clearance",
+        "min_wall_thickness",
+        "fillet_radius_valid",
+        "self_intersection_estimate",
+        "manufacturing_mode_rules",
+        "exportability_check"
+      ],
+      "repairable": true
+    },
+    "repairHistory": [
+      {
+        "repairAttempt": 1,
+        "changesApplied": [
+          "Step h_holes: moved hole positions inward to maintain 2mm edge clearance",
+          "Step v_holes: moved hole positions inward to maintain 2mm edge clearance"
+        ],
+        "resultStatus": "revalidated",
+        "updatedGeometryPlan": {
+          "version": "1.0",
+          "partType": "bracket",
+          "coordinateSystem": "right_handed_z_up",
+          "buildSteps": [
+            {
+              "id": "h_arm",
+              "action": "create_plate",
+              "params": {
+                "width": 50,
+                "depth": 30,
+                "thickness": 5
+              }
+            },
+            {
+              "id": "v_arm",
+              "action": "create_plate",
+              "params": {
+                "width": 5,
+                "depth": 30,
+                "thickness": 40
+              }
+            },
+            {
+              "id": "fillet",
+              "action": "join_perpendicular",
+              "params": {
+                "filletRadius": 3,
+                "axis": "y"
+              }
+            },
+            {
+              "id": "h_holes",
+              "action": "create_hole_pattern",
+              "params": {
+                "count": 2,
+                "diameter": 5.2,
+                "positions": [
+                  {
+                    "x": 12.5,
+                    "y": 4.6
+                  },
+                  {
+                    "x": 37.5,
+                    "y": 4.6
+                  }
+                ]
+              }
+            },
+            {
+              "id": "v_holes",
+              "action": "create_hole_pattern",
+              "params": {
+                "count": 2,
+                "diameter": 5.2,
+                "positions": [
+                  {
+                    "x": 4.6,
+                    "y": 10
+                  },
+                  {
+                    "x": 4.6,
+                    "y": 30
+                  }
+                ]
+              }
+            }
+          ],
+          "boundingBox": {
+            "x": 50,
+            "y": 40,
+            "z": 30
+          },
+          "criticalDimensions": [
+            "horizontalArmLength",
+            "verticalArmHeight",
+            "thickness"
+          ]
+        }
+      },
+      {
+        "repairAttempt": 2,
+        "changesApplied": [],
+        "resultStatus": "needs_ai",
+        "updatedGeometryPlan": {
+          "version": "1.0",
+          "partType": "bracket",
+          "coordinateSystem": "right_handed_z_up",
+          "buildSteps": [
+            {
+              "id": "h_arm",
+              "action": "create_plate",
+              "params": {
+                "width": 50,
+                "depth": 30,
+                "thickness": 5
+              }
+            },
+            {
+              "id": "v_arm",
+              "action": "create_plate",
+              "params": {
+                "width": 5,
+                "depth": 30,
+                "thickness": 40
+              }
+            },
+            {
+              "id": "fillet",
+              "action": "join_perpendicular",
+              "params": {
+                "filletRadius": 3,
+                "axis": "y"
+              }
+            },
+            {
+              "id": "h_holes",
+              "action": "create_hole_pattern",
+              "params": {
+                "count": 2,
+                "diameter": 5.2,
+                "positions": [
+                  {
+                    "x": 12.5,
+                    "y": 4.6
+                  },
+                  {
+                    "x": 37.5,
+                    "y": 4.6
+                  }
+                ]
+              }
+            },
+            {
+              "id": "v_holes",
+              "action": "create_hole_pattern",
+              "params": {
+                "count": 2,
+                "diameter": 5.2,
+                "positions": [
+                  {
+                    "x": 4.6,
+                    "y": 10
+                  },
+                  {
+                    "x": 4.6,
+                    "y": 30
+                  }
+                ]
+              }
+            }
+          ],
+          "boundingBox": {
+            "x": 50,
+            "y": 40,
+            "z": 30
+          },
+          "criticalDimensions": [
+            "horizontalArmLength",
+            "verticalArmHeight",
+            "thickness"
+          ]
+        }
+      }
+    ],
+    "buildMetadata": {
+      "totalDurationMs": 2,
+      "previewPartCount": 1,
+      "validationPassed": false,
+      "repairAttempts": 2,
+      "specConfidence": 0.95,
+      "hadBlueprint": false
+    },
+    "previewParts": [
+      {
+        "shape": "bracket_template",
+        "params": {
+          "armLength": 50,
+          "armHeight": 40,
+          "depth": 30,
+          "thickness": 5
+        },
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "label": "bracket"
+      }
+    ],
+    "stlBase64": null,
+    "errorContext": null,
+    "solidRequested": false,
+    "solidStatus": null,
+    "createdAt": "2026-03-26T13:33:53.447Z",
+    "updatedAt": "2026-03-26T13:33:53.449Z",
+    "normalizedDefaults": {
+      "armLength": 50,
+      "armHeight": 40,
+      "width": 30,
+      "thickness": 5,
+      "fillet": 3,
+      "holeSize": "M5",
+      "holesPerArm": 2
+    }
+  },
+  {
+    "id": "gen_1774532033449_yibxyo",
+    "projectId": "default-project",
+    "prompt": "Simple L-bracket with M5 holes",
+    "context": "",
+    "imageUrl": null,
+    "status": "ready",
+    "blueprintId": null,
+    "blueprintAnalysis": null,
+    "manufacturingMode": "unknown",
+    "materialPreference": "",
+    "highDetail": false,
+    "specJson": {
+      "version": "1.0",
+      "partType": "bracket",
+      "intentSummary": "A simple L-bracket for wall mounting",
+      "units": "mm",
+      "manufacturingMode": "3d_print",
+      "materialPreference": "PLA",
+      "targetUse": "wall mount",
+      "knownDimensions": {
+        "width": 50,
+        "height": 30,
+        "thickness": 5
+      },
+      "assumedDimensions": {
+        "filletRadius": 2
+      },
+      "constraints": [
+        "must fit M5 screw"
+      ],
+      "features": [
+        "hole",
+        "fillet"
+      ],
+      "missingInformation": [],
+      "riskFlags": [],
+      "confidence": 0.9
+    },
+    "constraintReport": {
+      "isBuildable": true,
+      "severity": "low",
+      "errors": [],
+      "warnings": [
+        "Verify overhangs and support requirements for FDM printing."
+      ],
+      "assumptionsUsed": [
+        "FDM printing assumed — support may be needed for overhangs >45°",
+        "filletRadius=2mm"
+      ],
+      "missingRequiredFields": [],
+      "recommendedQuestions": [],
+      "normalizedSpec": {
+        "partType": "bracket",
+        "units": "mm",
+        "manufacturingMode": "3d_print",
+        "materialPreference": "PLA"
+      }
+    },
+    "geometryPlan": {
+      "version": "1.0",
+      "partType": "bracket",
+      "coordinateSystem": "right_handed_z_up",
+      "boundingBox": {
+        "x": 50,
+        "y": 30,
+        "z": 5
+      },
+      "buildSteps": [
+        {
+          "id": "step_1",
+          "action": "create_box",
+          "description": "base plate",
+          "params": {
+            "width": 50,
+            "length": 30,
+            "height": 5
+          }
+        },
+        {
+          "id": "step_2",
+          "action": "create_hole_pattern",
+          "description": "mounting hole",
+          "params": {
+            "diameter": 5.5,
+            "depth": 5,
+            "positions": [
+              {
+                "x": 10,
+                "y": 15
+              }
+            ]
+          }
+        }
+      ],
+      "notes": "Simple bracket",
+      "criticalDimensions": [],
+      "expectedManufacturingChecks": []
+    },
+    "validationReport": {
+      "valid": true,
+      "severity": "low",
+      "errors": [],
+      "warnings": [
+        {
+          "code": "FDM_OVERHANG_ADVISORY",
+          "message": "FDM printing: overhangs >45° may require support structures",
+          "suggestedFix": "Orient part for minimum support, or add support-friendly chamfers"
+        }
+      ],
+      "checksRun": [
+        "bounding_box_valid",
+        "non_negative_dimensions",
+        "hole_edge_clearance",
+        "min_wall_thickness",
+        "fillet_radius_valid",
+        "self_intersection_estimate",
+        "manufacturing_mode_rules",
+        "exportability_check"
+      ],
+      "repairable": true
+    },
+    "repairHistory": [],
+    "buildMetadata": {
+      "totalDurationMs": 1,
+      "previewPartCount": 1,
+      "validationPassed": true,
+      "repairAttempts": 0,
+      "specConfidence": 0.9,
+      "hadBlueprint": false
+    },
+    "previewParts": [
+      {
+        "shape": "bracket_template",
+        "params": {
+          "armLength": 50,
+          "armHeight": 30,
+          "depth": 5,
+          "thickness": 5
+        },
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "label": "bracket"
+      }
+    ],
+    "stlBase64": null,
+    "errorContext": null,
+    "solidRequested": false,
+    "solidStatus": null,
+    "createdAt": "2026-03-26T13:33:53.449Z",
+    "updatedAt": "2026-03-26T13:33:53.450Z"
+  },
+  {
+    "id": "gen_1774532033552_suhqz9",
+    "projectId": "default-project",
+    "prompt": "",
+    "context": "",
+    "imageUrl": null,
+    "status": "failed",
+    "blueprintId": null,
+    "blueprintAnalysis": null,
+    "manufacturingMode": "unknown",
+    "materialPreference": "",
+    "highDetail": false,
+    "specJson": null,
+    "constraintReport": null,
+    "geometryPlan": null,
+    "validationReport": null,
+    "repairHistory": [],
+    "buildMetadata": {},
+    "previewParts": null,
+    "stlBase64": null,
+    "errorContext": "No prompt, image, or blueprint provided",
+    "solidRequested": false,
+    "solidStatus": null,
+    "createdAt": "2026-03-26T13:33:53.552Z",
+    "updatedAt": "2026-03-26T13:33:53.552Z"
+  },
+  {
+    "id": "gen_1774532033757_qdupxi",
+    "projectId": "default-project",
+    "prompt": "test part",
+    "context": "",
+    "imageUrl": null,
+    "status": "ready",
+    "blueprintId": null,
+    "blueprintAnalysis": null,
+    "manufacturingMode": "unknown",
+    "materialPreference": "",
+    "highDetail": false,
+    "specJson": {
+      "version": "1.0",
+      "partType": "bracket",
+      "intentSummary": "A simple L-bracket for wall mounting",
+      "units": "mm",
+      "manufacturingMode": "3d_print",
+      "materialPreference": "PLA",
+      "targetUse": "wall mount",
+      "knownDimensions": {
+        "width": 50,
+        "height": 30,
+        "thickness": 5
+      },
+      "assumedDimensions": {
+        "filletRadius": 2
+      },
+      "constraints": [
+        "must fit M5 screw"
+      ],
+      "features": [
+        "hole",
+        "fillet"
+      ],
+      "missingInformation": [],
+      "riskFlags": [],
+      "confidence": 0.9
+    },
+    "constraintReport": {
+      "isBuildable": true,
+      "severity": "low",
+      "errors": [],
+      "warnings": [
+        "Verify overhangs and support requirements for FDM printing."
+      ],
+      "assumptionsUsed": [
+        "FDM printing assumed — support may be needed for overhangs >45°",
+        "filletRadius=2mm"
+      ],
+      "missingRequiredFields": [],
+      "recommendedQuestions": [],
+      "normalizedSpec": {
+        "partType": "bracket",
+        "units": "mm",
+        "manufacturingMode": "3d_print",
+        "materialPreference": "PLA"
+      }
+    },
+    "geometryPlan": {
+      "version": "1.0",
+      "partType": "bracket",
+      "coordinateSystem": "right_handed_z_up",
+      "boundingBox": {
+        "x": 50,
+        "y": 30,
+        "z": 5
+      },
+      "buildSteps": [
+        {
+          "id": "step_1",
+          "action": "create_box",
+          "description": "base plate",
+          "params": {
+            "width": 50,
+            "length": 30,
+            "height": 5
+          }
+        },
+        {
+          "id": "step_2",
+          "action": "create_hole_pattern",
+          "description": "mounting hole",
+          "params": {
+            "diameter": 5.5,
+            "depth": 5,
+            "positions": [
+              {
+                "x": 10,
+                "y": 15
+              }
+            ]
+          }
+        }
+      ],
+      "notes": "Simple bracket",
+      "criticalDimensions": [],
+      "expectedManufacturingChecks": []
+    },
+    "validationReport": {
+      "valid": true,
+      "severity": "low",
+      "errors": [],
+      "warnings": [
+        {
+          "code": "FDM_OVERHANG_ADVISORY",
+          "message": "FDM printing: overhangs >45° may require support structures",
+          "suggestedFix": "Orient part for minimum support, or add support-friendly chamfers"
+        }
+      ],
+      "checksRun": [
+        "bounding_box_valid",
+        "non_negative_dimensions",
+        "hole_edge_clearance",
+        "min_wall_thickness",
+        "fillet_radius_valid",
+        "self_intersection_estimate",
+        "manufacturing_mode_rules",
+        "exportability_check"
+      ],
+      "repairable": true
+    },
+    "repairHistory": [],
+    "buildMetadata": {
+      "totalDurationMs": 2,
+      "previewPartCount": 1,
+      "validationPassed": true,
+      "repairAttempts": 0,
+      "specConfidence": 0.9,
+      "hadBlueprint": false
+    },
+    "previewParts": [
+      {
+        "shape": "bracket_template",
+        "params": {
+          "armLength": 50,
+          "armHeight": 30,
+          "depth": 5,
+          "thickness": 5
+        },
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "label": "bracket"
+      }
+    ],
+    "stlBase64": null,
+    "errorContext": null,
+    "solidRequested": false,
+    "solidStatus": null,
+    "createdAt": "2026-03-26T13:33:53.757Z",
+    "updatedAt": "2026-03-26T13:33:53.759Z"
   }
 ]

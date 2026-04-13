@@ -45,12 +45,15 @@ class RootErrorBoundary extends Component<
 
 function MechaGenApp() {
   const [session, setSession] = useState<Session | null>(null);
-  const [ready, setReady] = useState(false);
+  // In dev mode start ready immediately — no Supabase needed
+  const [ready, setReady] = useState(import.meta.env.DEV ? true : false);
   const [authStep, setAuthStep] = useState<AuthStep>('landing');
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const prevSessionRef = useRef<Session | null>(null);
 
   useEffect(() => {
+    // DEV BYPASS — skip Supabase in development so we can test without valid keys
+    if (import.meta.env.DEV) return;
     if (!supabase) {
       setReady(true);
       return;
@@ -96,6 +99,24 @@ function MechaGenApp() {
           then restart the dev server.
         </p>
       </div>
+    );
+  }
+
+  // DEV BYPASS — skip Supabase in development
+  if (import.meta.env.DEV) {
+    const devSession = {
+      user: {
+        id: 'dev-user',
+        email: 'dev@mechagen.local',
+        user_metadata: { role: 'engineer', full_name: 'Dev User' },
+      },
+    } as unknown as import('@supabase/supabase-js').Session;
+    return (
+      <MainLayout
+        session={devSession}
+        supabase={supabase as any}
+        onSignOut={() => {}}
+      />
     );
   }
 

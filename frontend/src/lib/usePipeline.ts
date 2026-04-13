@@ -14,6 +14,7 @@ interface GenerateParams {
   projectName?: string;
   blueprintId?: string;   // Phase 2
   solidRequested?: boolean; // Phase 3
+  taskType?: 'single' | 'assembly';
 }
 
 interface UsePipelineReturn {

@@ -68,6 +68,7 @@ export type LeftPanelProps = {
     highDetail: boolean;
     blueprintId?: string;
     solidRequested?: boolean;
+    taskType?: 'single' | 'assembly';
   }) => void;
   onPipelineRepair?: () => void;
   onPipelineExportObj?: () => void;

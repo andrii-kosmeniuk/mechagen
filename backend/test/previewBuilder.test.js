@@ -123,7 +123,7 @@ test('gear defaults applied when no steps', () => {
 
 test('bracket partType uses generic builder', () => {
   const plan = {
-    partType: 'bracket',
+    partType: 'generic_part',
     buildSteps: [
       { id: 's1', action: 'create_plate', params: { width: 50, height: 5, depth: 30 } },
     ],
@@ -137,7 +137,7 @@ test('bracket partType uses generic builder', () => {
 
 test('create_box step produces box shape', () => {
   const plan = {
-    partType: 'bracket',
+    partType: 'generic_part',
     buildSteps: [{ id: 's1', action: 'create_box', params: { width: 40, depth: 20, height: 5 } }],
     boundingBox: {},
   };
@@ -159,7 +159,7 @@ test('create_cylinder step produces cylinder shape', () => {
 
 test('create_basic_gear step produces multiple parts (body + bore + teeth)', () => {
   const plan = {
-    partType: 'bracket',  // NOT gear_basic \u2014 so uses generic builder
+    partType: 'generic_part',  // NOT gear_basic — so uses generic builder
     buildSteps: [{ id: 's1', action: 'create_basic_gear', params: { toothCount: 12, module: 2, thickness: 8, boreDiameter: 6 } }],
     boundingBox: {},
   };
@@ -168,7 +168,7 @@ test('create_basic_gear step produces multiple parts (body + bore + teeth)', () 
 });
 
 test('empty buildSteps returns 0 parts', () => {
-  const plan = { partType: 'bracket', buildSteps: [], boundingBox: {} };
+  const plan = { partType: 'generic_part', buildSteps: [], boundingBox: {} };
   const result = buildPreviewFromPlan(plan);
   assert.strictEqual(result.parts.length, 0);
 });
@@ -193,7 +193,7 @@ test('name includes partType', () => {
 
 test('hole_pattern produces dark cylinders', () => {
   const plan = {
-    partType: 'mounting_plate',
+    partType: 'generic_part',
     buildSteps: [{ id: 's1', action: 'create_hole_pattern', params: { count: 4, diameter: 5 } }],
     boundingBox: {},
   };

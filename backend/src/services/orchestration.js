@@ -14,6 +14,7 @@
 const { callAiForJson }    = require('./ai/aiClient');
 const { registry: prompts } = require('./ai/promptRegistry');
 const { normalizePrompt }   = require('./promptNormalizer');
+const { getCanonicalSpec }  = require('./canonicalPartSpecs');
 
 const { validateSpecJson, validateGeometryPlan } = require('../schemas/specSchema');
 const { checkConstraints } = require('./constraintEngine');
@@ -116,56 +117,74 @@ async function runPipeline(id, input) {
     }
   }
 
-  // ─── Stage 1c: Prompt normalization ──────────────────────────────────────
-  // Expand short canonical prompts BEFORE the AI sees the text.
+  // ─── Stage 1c: Prompt normalization + canonical bypass ─────────────────
+  // For canonical short prompts (bolt, bracket, gear, etc.) bypass AI entirely.
+  // For everything else, expand the prompt before the AI sees it.
   const normResult = normalizePrompt(input.prompt);
+  let canonicalSpec = null;
+  let canonicalPlan = null;
+
   if (normResult.normalized) {
+    const originalPrompt = input.prompt;
     log(id, 'prompt_normalization', 'applied', {
       originalPrompt: (input.prompt || '').slice(0, 60),
       partType: normResult.partType,
-      expandedPrompt: normResult.expandedPrompt.slice(0, 120),
     });
-    // Augment input with expanded prompt — keep original for record
-    input = {
-      ...input,
-      prompt: normResult.expandedPrompt,
-      _originalPrompt: input.prompt,
-      _normalizedDefaults: normResult.assumedDefaults,
-      manufacturingMode: input.manufacturingMode !== 'unknown' && input.manufacturingMode
-        ? input.manufacturingMode
-        : (normResult.manufacturingMode || input.manufacturingMode),
-    };
     updateGeneration(id, {
       normalizedDefaults: normResult.assumedDefaults,
-      originalPrompt: normResult.normalized ? normResult.expandedPrompt : undefined,
     });
+
+    // Try to get a fully deterministic spec + plan (bypasses AI for canonical types)
+    const canonical = getCanonicalSpec(normResult.partType, originalPrompt);
+    if (canonical) {
+      canonicalSpec = canonical.spec;
+      canonicalPlan = canonical.plan;
+      log(id, 'canonical_spec', 'applied', { partType: canonicalSpec.partType });
+    } else {
+      // Canonical type not yet in registry — expand prompt for AI
+      input = {
+        ...input,
+        prompt: normResult.expandedPrompt,
+        manufacturingMode: input.manufacturingMode !== 'unknown' && input.manufacturingMode
+          ? input.manufacturingMode
+          : (normResult.manufacturingMode || input.manufacturingMode),
+      };
+    }
   }
 
-  // ─── Stage 2: Spec generation ─────────────────────────────────────────────
+  // ─── Stage 2: Spec generation (skipped for canonical) ─────────────────────
   updateGeneration(id, { status: 'spec_generating' });
-  log(id, 'spec_generation', 'started');
+  log(id, 'spec_generation', canonicalSpec ? 'skipped_canonical' : 'started');
 
   let specJson;
-  try {
-    const t1 = Date.now();
-    const p = blueprintHints ? prompts.blueprintSpec : prompts.spec;
-    const userMessage = blueprintHints
-      ? p.buildUserMessage(input, blueprintHints)
-      : p.buildUserMessage(input);
-    const rawSpec = await callAiForJson(p.system, userMessage, { image: input.image });
-    const { value: validatedSpec, errors: specErrors } = validateSpecJson(rawSpec);
-    if (!validatedSpec) throw new Error(`Spec validation failed: ${specErrors.join('; ')}`);
-    if (specErrors.length > 0) log(id, 'spec_generation', 'schema_warnings', { warnings: specErrors });
-    specJson = validatedSpec;
+  if (canonicalSpec) {
+    // Deterministic spec — no AI call needed
+    specJson = canonicalSpec;
     updateGeneration(id, { specJson });
-    log(id, 'spec_generation', 'completed', { durationMs: Date.now() - t1, partType: specJson.partType });
-  } catch (err) {
-    log(id, 'spec_generation', 'failed', { error: err.message });
-    updateGeneration(id, { status: 'failed', errorContext: `Spec generation failed: ${err.message}` });
-    return;
+    log(id, 'spec_generation', 'completed_canonical', { partType: specJson.partType });
+  } else {
+    try {
+      const t1 = Date.now();
+      const p = blueprintHints ? prompts.blueprintSpec : prompts.spec;
+      const userMessage = blueprintHints
+        ? p.buildUserMessage(input, blueprintHints)
+        : p.buildUserMessage(input);
+      const rawSpec = await callAiForJson(p.system, userMessage, { image: input.image });
+      const { value: validatedSpec, errors: specErrors } = validateSpecJson(rawSpec);
+      if (!validatedSpec) throw new Error(`Spec validation failed: ${specErrors.join('; ')}`);
+      if (specErrors.length > 0) log(id, 'spec_generation', 'schema_warnings', { warnings: specErrors });
+      specJson = validatedSpec;
+      updateGeneration(id, { specJson });
+      log(id, 'spec_generation', 'completed', { durationMs: Date.now() - t1, partType: specJson.partType });
+    } catch (err) {
+      log(id, 'spec_generation', 'failed', { error: err.message });
+      updateGeneration(id, { status: 'failed', errorContext: `Spec generation failed: ${err.message}` });
+      return;
+    }
   }
 
   // ─── Stage 3: Constraint check ────────────────────────────────────────────
+
   updateGeneration(id, { status: 'constraint_checking' });
   log(id, 'constraint_check', 'started');
 
@@ -185,29 +204,36 @@ async function runPipeline(id, input) {
     return;
   }
 
-  // ─── Stage 4: Geometry plan ───────────────────────────────────────────────
+  // ─── Stage 4: Geometry plan (skipped for canonical) ──────────────────────
   updateGeneration(id, { status: 'planning' });
-  log(id, 'geometry_planning', 'started');
+  log(id, 'geometry_planning', canonicalPlan ? 'skipped_canonical' : 'started');
 
   let geometryPlan;
-  try {
-    const t2 = Date.now();
-    const rawPlan = await callAiForJson(
-      prompts.geometryPlan.system,
-      prompts.geometryPlan.buildUserMessage(specJson),
-      {}
-    );
-    const { value: validatedPlan, errors: planErrors } = validateGeometryPlan(rawPlan);
-    if (!validatedPlan || planErrors.length > 2) throw new Error(`Geometry plan validation failed: ${planErrors.join('; ')}`);
-    if (planErrors.length > 0) log(id, 'geometry_planning', 'schema_warnings', { warnings: planErrors });
-    geometryPlan = validatedPlan;
+  if (canonicalPlan) {
+    geometryPlan = canonicalPlan;
     updateGeneration(id, { geometryPlan });
-    log(id, 'geometry_planning', 'completed', { durationMs: Date.now() - t2, steps: geometryPlan.buildSteps.length });
-  } catch (err) {
-    log(id, 'geometry_planning', 'failed', { error: err.message });
-    updateGeneration(id, { status: 'failed', errorContext: `Geometry planning failed: ${err.message}` });
-    return;
+    log(id, 'geometry_planning', 'completed_canonical', { steps: geometryPlan.buildSteps.length });
+  } else {
+    try {
+      const t2 = Date.now();
+      const rawPlan = await callAiForJson(
+        prompts.geometryPlan.system,
+        prompts.geometryPlan.buildUserMessage(specJson),
+        {}
+      );
+      const { value: validatedPlan, errors: planErrors } = validateGeometryPlan(rawPlan);
+      if (!validatedPlan || planErrors.length > 2) throw new Error(`Geometry plan validation failed: ${planErrors.join('; ')}`);
+      if (planErrors.length > 0) log(id, 'geometry_planning', 'schema_warnings', { warnings: planErrors });
+      geometryPlan = validatedPlan;
+      updateGeneration(id, { geometryPlan });
+      log(id, 'geometry_planning', 'completed', { durationMs: Date.now() - t2, steps: geometryPlan.buildSteps.length });
+    } catch (err) {
+      log(id, 'geometry_planning', 'failed', { error: err.message });
+      updateGeneration(id, { status: 'failed', errorContext: `Geometry planning failed: ${err.message}` });
+      return;
+    }
   }
+
 
   // ─── Stage 5: Deterministic preview build ─────────────────────────────────
   updateGeneration(id, { status: 'building_preview' });

@@ -222,5 +222,37 @@
     "userId": "user-abc",
     "status": "queued",
     "createdAt": "2026-03-26T00:12:23.758Z"
+  },
+  {
+    "id": "gen_test_1774485570215",
+    "prompt": "bracket",
+    "status": "ready",
+    "createdAt": "2026-03-26T00:39:30.215Z",
+    "specJson": {
+      "material": "aluminum"
+    },
+    "updatedAt": "2026-03-26T00:39:30.216Z"
+  },
+  {
+    "id": "gen_usr_1774485570217",
+    "userId": "user-abc",
+    "status": "queued",
+    "createdAt": "2026-03-26T00:39:30.217Z"
+  },
+  {
+    "id": "gen_test_1774532032542",
+    "prompt": "bracket",
+    "status": "ready",
+    "createdAt": "2026-03-26T13:33:52.542Z",
+    "specJson": {
+      "material": "aluminum"
+    },
+    "updatedAt": "2026-03-26T13:33:52.544Z"
+  },
+  {
+    "id": "gen_usr_1774532032545",
+    "userId": "user-abc",
+    "status": "queued",
+    "createdAt": "2026-03-26T13:33:52.545Z"
   }
 ]
