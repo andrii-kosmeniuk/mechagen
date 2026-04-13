@@ -356,8 +356,83 @@ function stepToPreviewParts(step, plan, offsetZ) {
     case 'fillet_edges':
     case 'chamfer_edges':
     case 'mirror_feature':
+      break;
+
+    case 'create_hex_head': {
+      // Approximate hex head as a short flat cylinder (hex shape approximated)
+      const w = Number(p.widthAcrossFlats) || Number(p.width) || 13;
+      const h = Number(p.height) || Number(p.headHeight) || 5.3;
+      const cx = Number((p.center || [])[0]) || 0;
+      const cy = Number((p.center || [])[1]) || 0;
+      const cz = Number((p.center || [])[2]) || offsetZ + h / 2;
+      // Use 6-sided cylinder approximation (radialSegments=6 handled by viewport)
+      parts.push({
+        shape: 'cylinder',
+        params: { radiusTop: w / 2 * 0.866, radiusBottom: w / 2 * 0.866, height: h, radialSegments: 6 },
+        position: { x: cx, y: cy, z: cz },
+        rotation: { x: 0, y: Math.PI / 6, z: 0 },
+        color: SHAPE_COLORS[plan.partType] || '#9ab0c8',
+        metalness: 0.85, roughness: 0.15,
+        label: step.id,
+      });
+      offsetZ = cz + h / 2;
+      break;
+    }
+
+    case 'apply_thread_visual': {
+      // Thread visualization as a series of thin ring-cylinders along the shaft
+      const pitch   = Number(p.pitch) || 1.25;
+      const length  = Number(p.length) || 20;
+      const startZ  = offsetZ + (Number(p.startOffset) || 0);
+      const ringH   = pitch * 0.6;
+      const count   = Math.min(Math.floor(length / pitch), 30);
+      for (let i = 0; i < count; i++) {
+        parts.push({
+          shape: 'cylinder',
+          params: { radiusTop: 4.2, radiusBottom: 4.2, height: ringH },
+          position: { x: 0, y: 0, z: startZ + i * pitch + ringH / 2 },
+          rotation: { x: 0, y: 0, z: 0 },
+          color: '#6080a8',
+          metalness: 0.9, roughness: 0.1,
+          label: `${step.id}_ring${i}`,
+        });
+      }
+      break;
+    }
+
+    case 'create_bolt': {
+      // Composite: shaft + hex head in one action
+      const diameter   = Number(p.diameter) || Number(p.shaftDiameter) || 8;
+      const totalLen   = Number(p.totalLength) || Number(p.length) || 40;
+      const headFlats  = Number(p.headWidthAcrossFlats) || Number(p.headFlats) || 13;
+      const headH      = Number(p.headHeight) || 5.3;
+      // Shaft
+      parts.push({
+        shape: 'cylinder',
+        params: { radiusTop: diameter / 2, radiusBottom: diameter / 2, height: totalLen },
+        position: { x: 0, y: 0, z: offsetZ + totalLen / 2 },
+        rotation: { x: 0, y: 0, z: 0 },
+        color: SHAPE_COLORS[plan.partType] || '#9ab0c8',
+        metalness: 0.85, roughness: 0.15,
+        label: `${step.id}_shaft`,
+      });
+      // Hex head on top
+      parts.push({
+        shape: 'cylinder',
+        params: { radiusTop: headFlats / 2 * 0.866, radiusBottom: headFlats / 2 * 0.866, height: headH, radialSegments: 6 },
+        position: { x: 0, y: 0, z: offsetZ + totalLen + headH / 2 },
+        rotation: { x: 0, y: Math.PI / 6, z: 0 },
+        color: SHAPE_COLORS[plan.partType] || '#9ab0c8',
+        metalness: 0.85, roughness: 0.1,
+        label: `${step.id}_head`,
+      });
+      offsetZ += totalLen + headH;
+      break;
+    }
+
     default:
       break;
+
   }
 
   return { parts, nextOffsetZ: offsetZ };
@@ -370,7 +445,136 @@ function stepToPreviewParts(step, plan, offsetZ) {
  * @returns {{ parts: object[], name: string, description: string, dimensions: object }}
  */
 function buildPreviewFromPlan(geometryPlan) {
+  const partType = (geometryPlan.partType || '').toLowerCase();
+  const bb = geometryPlan.boundingBox || {};
+
+  // ── Canonical template early-return ──────────────────────────────────────────
+  // For known canonical part types, emit a single rich-renderer template part
+  // that Viewport3D dispatches to its high-quality bolt/gear procedural renderer.
+
+  if (partType === 'bolt' || partType === 'screw') {
+    // Extract from plan steps or use defaults
+    const steps = geometryPlan.buildSteps || [];
+    const shaftStep = steps.find(s => s.action === 'create_cylinder' || s.action === 'create_bolt');
+    const headStep  = steps.find(s => s.action === 'create_hex_head');
+    const threadStep = steps.find(s => s.action === 'apply_thread_visual');
+
+    const diameter   = shaftStep?.params?.radius
+      ? shaftStep.params.radius * 2
+      : (shaftStep?.params?.diameter || 8);
+    const length     = shaftStep?.params?.height || headStep?.params?.center?.[1] || 40;
+    const headFlats  = headStep?.params?.widthAcrossFlats || headStep?.params?.width || 13;
+    const headHeight = headStep?.params?.height || headStep?.params?.headHeight || 5.3;
+    const pitch      = threadStep?.params?.pitch || 1.25;
+    const smoothLen  = length * 0.35;
+    const threadLen  = length * 0.65;
+
+    return {
+      parts: [{
+        shape: 'bolt_template',
+        params: {
+          diameter,
+          length,
+          headWidthAcrossFlats: headFlats,
+          headHeight,
+          threadPitch: pitch,
+          smoothLen,
+          threadLen,
+          washerOD:  diameter * 2.1,
+          washerH:   diameter * 0.2,
+        },
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        label: 'bolt',
+      }],
+      name: 'bolt (preview)',
+      description: `Procedural bolt — hex head Ø${diameter}mm × ${length}mm`,
+      dimensions: {
+        x: headFlats,
+        y: headFlats,
+        z: length + headHeight,
+      },
+    };
+  }
+
+  if (partType === 'gear_basic' || partType === 'gear') {
+    const steps = geometryPlan.buildSteps || [];
+    const gearStep = steps.find(s => s.action === 'create_basic_gear');
+    const teeth     = gearStep?.params?.toothCount || 20;
+    const module_   = gearStep?.params?.module || 2;
+    const faceWidth = gearStep?.params?.thickness || gearStep?.params?.faceWidth || 10;
+    const bore      = gearStep?.params?.boreDiameter || 8;
+
+    return {
+      parts: [{
+        shape: 'gear_template',
+        params: { toothCount: teeth, module: module_, faceWidth, boreDiameter: bore },
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        label: 'gear',
+      }],
+      name: 'gear (preview)',
+      description: `Procedural spur gear — ${teeth}T, module ${module_}`,
+      dimensions: {
+        x: (teeth + 2) * module_,
+        y: (teeth + 2) * module_,
+        z: faceWidth,
+      },
+    };
+  }
+
+  if (partType === 'bracket') {
+    const armLen = bb.x || 50;
+    const armH = bb.y || 40;
+    const width = bb.z || 30;
+    return {
+      parts: [{
+        shape: 'bracket_template',
+        params: { armLength: armLen, armHeight: armH, depth: width, thickness: 5 },
+        position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, label: 'bracket',
+      }],
+      name: 'bracket (preview)',
+      description: `Procedural L-bracket — ${armLen}x${armH}x${width}mm`,
+      dimensions: { x: armLen, y: armH, z: width },
+    };
+  }
+
+  if (partType === 'mounting_plate' || partType === 'mount_plate') {
+    const width = bb.x || 100;
+    const length = bb.y || 60;
+    const thickness = bb.z || 4;
+    return {
+      parts: [{
+        shape: 'mount_plate_template',
+        params: { width, length, thickness, holeDiameter: 4.3 },
+        position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, label: 'mount_plate',
+      }],
+      name: 'mounting plate (preview)',
+      description: `Procedural mounting plate — ${width}x${length}mm`,
+      dimensions: { x: width, y: length, z: thickness },
+    };
+  }
+
+  if (partType === 'bearing_block' || partType === 'bearing') {
+    const outerD = bb.x || 47;
+    const width = bb.z || 14;
+    const innerStep = (geometryPlan.buildSteps || []).find(s => s.id === 'inner' || s.action === 'create_cylinder');
+    const bore = innerStep?.params?.innerDiameter || 20;
+    return {
+      parts: [{
+        shape: 'bearing_template',
+        params: { outerD, innerD: bore, width },
+        position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, label: 'bearing',
+      }],
+      name: 'bearing (preview)',
+      description: `Procedural bearing — outer Ø${outerD}mm`,
+      dimensions: { x: outerD, y: outerD, z: width },
+    };
+  }
+
+  // ── Generic step-by-step builder (all other part types) ──────────────────────
   const allParts = [];
+
   let offsetZ = 0;
 
   for (const step of (geometryPlan.buildSteps || [])) {
@@ -379,12 +583,13 @@ function buildPreviewFromPlan(geometryPlan) {
     offsetZ = nextOffsetZ;
   }
 
-  const bb = geometryPlan.boundingBox || {};
+  const planBB = geometryPlan.boundingBox || {};
   const dimensions = {
-    x: Number(bb.x) || 0,
-    y: Number(bb.y) || 0,
-    z: Number(bb.z) || 0,
+    x: Number(planBB.x) || 0,
+    y: Number(planBB.y) || 0,
+    z: Number(planBB.z) || 0,
   };
+
 
   const name = `${(geometryPlan.partType || 'part').replace(/_/g, ' ')} (preview)`;
   const description = `Procedural preview — ${allParts.length} mesh primitives`;

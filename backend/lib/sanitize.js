@@ -104,6 +104,7 @@ function sanitizeRequest(body) {
       proceduralParts: proceduralPartsFlag,
       context: contextStr,
       projectName: projectNameStr,
+      taskType: body.taskType,
     }
   };
 }

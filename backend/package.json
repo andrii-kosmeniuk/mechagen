@@ -2,14 +2,31 @@
   "name": "mechagen-backend",
   "version": "1.0.0",
   "description": "MechaGen AI geometry generation backend",
-  "engines": { "node": ">=18.x" },
-  "scripts": {
-    "start": "node server.js",
-    "dev":   "node server.js",
-    "lint":  "node --check lib/ai.js lib/cadquerySystemPrompt.js lib/geometry.js lib/sanitize.js lib/executeGenerate.js api/generate.js"
+  "engines": {
+    "node": ">=18.x"
   },
-
+  "scripts": {
+    "start":         "node server.js",
+    "dev":           "node server.js",
+    "test":          "npm run test:all",
+    "test:all":      "node test/planService.test.js && node test/usageService.test.js && node test/creditService.test.js && node test/workspaceService.test.js && node test/accessControl.test.js && node test/rateLimitService.test.js && node test/onboardingService.test.js && node test/analyticsService.test.js && node test/waitlistService.test.js && node test/feedbackService.test.js && node test/demoService.test.js && node test/launchAdmin.test.js && node test/generationRepo.test.js && node test/config.test.js && node test/appError.test.js && node test/workerContract.test.js && node test/response.test.js && node test/pipeline.test.js && node test/parseAiJson.test.js && node test/validation.test.js && node test/repair.test.js && node test/blueprint.test.js",
+    "test:services": "node test/planService.test.js && node test/usageService.test.js && node test/creditService.test.js && node test/workspaceService.test.js && node test/accessControl.test.js && node test/rateLimitService.test.js && node test/onboardingService.test.js && node test/analyticsService.test.js && node test/waitlistService.test.js && node test/feedbackService.test.js && node test/demoService.test.js && node test/launchAdmin.test.js",
+    "test:repos":    "node test/generationRepo.test.js",
+    "test:infra":    "node test/config.test.js && node test/appError.test.js",
+    "test:worker":   "node test/workerContract.test.js",
+    "test:lib":      "node test/response.test.js",
+    "test:pipeline": "node test/pipeline.test.js",
+    "test:ai":         "node test/parseAiJson.test.js",
+    "test:validation":  "node test/validation.test.js",
+    "test:repair":      "node test/repair.test.js",
+    "test:blueprint":   "node test/blueprint.test.js",
+    "check":         "node -e \"require('./src/app')\" && echo 'app.js OK'",
+    "lint":          "node --check server.js src/app.js src/config/index.js src/errors/AppError.js src/repositories/generationRepo.js src/lib/response.js src/middleware/validate.js src/middleware/uploadGuard.js"
+  },
   "devDependencies": {
     "vercel": "latest"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0"
   }
 }

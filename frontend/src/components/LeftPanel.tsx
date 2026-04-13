@@ -3,6 +3,14 @@ import type { GeomData, HistoryPart, Generation } from '../types';
 import { PipelineForm }  from './PipelineForm';
 import { AssumptionsPanel, ValidationPanel } from './PipelinePanels';
 import { PipelineStatusBadge } from './PipelineStatusBadge';
+import { HistoryPanel } from './HistoryPanel';
+import { SolidStatusPanel } from './SolidStatusPanel';
+import { GenerationResultCard } from './GenerationResultCard';
+import { BillingPanel } from './BillingPanel';
+import { UsageDashboard } from './UsageDashboard';
+import { WorkspacePanel } from './WorkspacePanel';
+import { QuotaWarning } from './QuotaWarning';
+import { usePlan } from '../lib/usePlan';
 import type { ManufacturingMode } from '../types';
 
 const QUICK_TEMPLATES = [
@@ -15,7 +23,7 @@ const QUICK_TEMPLATES = [
 ];
 
 type AgentMode = 'single' | 'multi' | 'adversarial' | 'swarm';
-type PanelPage = 'design' | 'pipeline' | 'export' | 'history';
+type PanelPage = 'design' | 'pipeline' | 'export' | 'history' | 'billing' | 'workspace';
 
 export type LeftPanelProps = {
   projectName: string;
@@ -58,8 +66,15 @@ export type LeftPanelProps = {
     manufacturingMode: ManufacturingMode;
     materialPreference: string;
     highDetail: boolean;
+    blueprintId?: string;
+    solidRequested?: boolean;
+    taskType?: 'single' | 'assembly';
   }) => void;
   onPipelineRepair?: () => void;
+  onPipelineExportObj?: () => void;
+  onPipelineExportGlb?: () => void;
+  onDownloadStl?: () => void;
+  projectId?: string;
 };
 
 export function LeftPanel(props: LeftPanelProps) {
@@ -257,12 +272,14 @@ export function LeftPanel(props: LeftPanelProps) {
     },
   };
 
+  const planState = usePlan();
+
   return (
     <aside style={s.panel}>
       <div style={s.header}>
         <span style={s.brand}>⬡ MECHAGEN</span>
-        <div style={{ display: 'flex', gap: 2 }}>
-          {(['design', 'pipeline', 'export', 'history'] as const).map((id) => (
+        <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          {(['design', 'pipeline', 'export', 'history', 'billing', 'workspace'] as const).map((id) => (
             <button
               key={id}
               type="button"
@@ -480,11 +497,17 @@ export function LeftPanel(props: LeftPanelProps) {
               </div>
             )}
 
+            {/* Result card — shown when ready */}
+            {props.pipelineGeneration?.status === 'ready' && (
+              <GenerationResultCard generation={props.pipelineGeneration} />
+            )}
+
             {/* Pipeline form */}
             {props.onPipelineGenerate && (
               <PipelineForm
                 generating={!!props.pipelineGenerating}
                 onGenerate={props.onPipelineGenerate}
+                projectId={props.projectId}
               />
             )}
 
@@ -532,10 +555,46 @@ export function LeftPanel(props: LeftPanelProps) {
                       {m.repairAttempts !== undefined && Number(m.repairAttempts) > 0 && (
                         <span>🔧 {Number(m.repairAttempts)} repair attempt(s)</span>
                       )}
+                      {Boolean(m.hadBlueprint) && <span>📐 Blueprint-assisted</span>}
                     </div>
                   );
                 })()}
+
+                {/* Phase 2: Export buttons */}
+                {(props.onPipelineExportObj || props.onPipelineExportGlb) && (
+                  <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.07em', marginBottom: 4, width: '100%' }}>EXPORT</div>
+                    {props.onPipelineExportObj && (
+                      <button
+                        onClick={props.onPipelineExportObj}
+                        style={{
+                          flex: 1, padding: '6px 0', borderRadius: 6, border: 'none', cursor: 'pointer',
+                          fontSize: 10, fontWeight: 700,
+                          background: 'rgba(52,211,153,0.15)', color: '#34d399',
+                        }}
+                      >↓ OBJ</button>
+                    )}
+                    {props.onPipelineExportGlb && (
+                      <button
+                        onClick={props.onPipelineExportGlb}
+                        style={{
+                          flex: 1, padding: '6px 0', borderRadius: 6, border: 'none', cursor: 'pointer',
+                          fontSize: 10, fontWeight: 700,
+                          background: 'rgba(96,165,250,0.15)', color: '#60a5fa',
+                        }}
+                      >↓ GLB</button>
+                    )}
+                  </div>
+                )}
               </div>
+            )}
+            {/* Phase 3: Solid build panel */}
+            {props.pipelineGeneration?.status === 'ready' && (
+              <SolidStatusPanel
+                generationId={props.pipelineGeneration.id}
+                generationStatus={props.pipelineGeneration.status}
+                onSolidBuilt={() => { /* STL is now downloadable */ }}
+              />
             )}
           </div>
         )}
@@ -601,31 +660,53 @@ export function LeftPanel(props: LeftPanelProps) {
         )}
 
         {page === 'history' && (
-          <div>
-            <div style={s.sectionTitle}>History</div>
-            {props.historyParts.length === 0 ? (
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                No parts yet. Generate one from Design.
-              </div>
-            ) : (
-              props.historyParts.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  style={{
-                    ...s.chip,
-                    width: '100%',
-                    textAlign: 'left',
-                    marginBottom: 6,
-                  }}
-                  onClick={() => {
-                    props.onSelectHistoryPart(p);
-                    setPage('design');
-                  }}
-                >
-                  {p.name}
-                </button>
-              ))
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={s.sectionTitle}>Project History</div>
+            <HistoryPanel
+              projectId={props.projectId || 'default-project'}
+            />
+          </div>
+        )}
+
+        {page === 'billing' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={s.sectionTitle}>💳 PLAN & BILLING</div>
+            {planState.loading && (
+              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Loading…</div>
+            )}
+            {!planState.loading && planState.usage && (
+              <QuotaWarning usage={planState.usage} threshold={80} />
+            )}
+            {!planState.loading && (
+              <BillingPanel
+                plan={planState.plan}
+                subscription={planState.subscription}
+                usage={planState.usage}
+                onUpgrade={() => window.open('https://mechagen.io/pricing', '_blank')}
+                devMode={import.meta.env.DEV}
+                onSetPlan={planState.setUserPlan}
+              />
+            )}
+            {!planState.loading && planState.usage && (
+              <>
+                <div style={{ ...s.sectionTitle, marginTop: 4 }}>📊 USAGE THIS MONTH</div>
+                <UsageDashboard usage={planState.usage} />
+              </>
+            )}
+          </div>
+        )}
+
+        {page === 'workspace' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={s.sectionTitle}>🏢 WORKSPACES</div>
+            {planState.loading && (
+              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Loading…</div>
+            )}
+            {!planState.loading && (
+              <WorkspacePanel
+                workspaces={planState.workspaces}
+                onRefresh={planState.refresh}
+              />
             )}
           </div>
         )}

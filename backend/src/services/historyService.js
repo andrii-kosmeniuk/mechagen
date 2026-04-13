@@ -10,6 +10,7 @@
 const { listGenerations, getGeneration } = require('./orchestration');
 const { listBlueprintsForProject }       = require('./blueprintService');
 const { getExportsForGeneration }        = require('./exportService');
+const { getSolidBuildByGenerationId }    = require('./solidBuildService');
 
 /**
  * Get full project history, ordered by newest first.
@@ -39,9 +40,25 @@ function getProjectHistory(projectId) {
   // Sort exports newest first
   allExports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
+  // Attach solid build status to each generation summary
+  const generationSummaries = allGenerations.map(g => {
+    const solidBuild = getSolidBuildByGenerationId(g.id);
+    return {
+      id:             g.id,
+      status:         g.status,
+      solidStatus:    solidBuild?.status ?? g.solidStatus ?? null,
+      solidRequested: g.solidRequested ?? false,
+      prompt:         g.prompt,
+      createdAt:      g.createdAt,
+      blueprintId:    g.blueprintId ?? null,
+      partType:       g.specJson?.partType ?? null,
+      stlFileUrl:     solidBuild?.stlFileUrl ?? null,
+    };
+  });
+
   return {
     projectId,
-    generations: allGenerations,
+    generations: generationSummaries,
     blueprints:  allBlueprints,
     exports:     allExports,
     totalGenerations: allGenerations.length,
@@ -101,6 +118,23 @@ function getGenerationTimeline(generationId) {
   const exports = getExportsForGeneration(generationId);
   for (const e of exports) {
     addEvent('exported', { type: e.type, fileUrl: e.fileUrl, fileSize: e.fileSize });
+  }
+
+  // Phase 3: solid build events
+  const solidBuild = getSolidBuildByGenerationId(generationId);
+  if (solidBuild) {
+    if (solidBuild.status === 'solid_ready') {
+      addEvent('solid_ready', {
+        stlFileUrl: solidBuild.stlFileUrl,
+        stlFileSizeBytes: solidBuild.stlFileSizeBytes,
+        executionTimeMs: solidBuild.executionTimeMs,
+        meshCheck: solidBuild.meshCheck,
+      });
+    } else if (solidBuild.status === 'solid_failed') {
+      addEvent('solid_failed', { errorReason: solidBuild.errorReason });
+    } else {
+      addEvent('solid_building', { status: solidBuild.status });
+    }
   }
 
   if (gen.status === 'failed') {

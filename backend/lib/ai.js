@@ -17,7 +17,7 @@ const TIMEOUT_COMPLEX_MS = 180_000;
  */
 function getChatModel() {
   return (
-    process.env.MECHAGEN_AI_MODEL || 'nvidia/nemotron-3-super-120b-a12b'
+    process.env.MECHAGEN_AI_MODEL || 'google/gemma-4-31b-it'
   ).trim();
 }
 
@@ -53,7 +53,7 @@ function modelPromptDemandsBearing(prompt) {
 
 const SYSTEM_PROMPT = require('./cadquerySystemPrompt');
 const GEOMETRY_SYSTEM_PROMPT = require('./geometrySystemPrompt');
-
+const ASSEMBLY_SYSTEM_PROMPT = require('./assemblySystemPrompt');
 
 const HIGH_DETAIL_SUFFIX =
   '\n\n[MECHAGEN: HIGH_DETAIL=true] Maximum practical detail. ' +
@@ -193,7 +193,11 @@ async function callNemotron(prompt, image, options = {}) {
         messages: [
           {
             role: 'system',
-            content: geometryParts ? GEOMETRY_SYSTEM_PROMPT : SYSTEM_PROMPT,
+            content: options.taskType === 'assembly' 
+              ? ASSEMBLY_SYSTEM_PROMPT 
+              : geometryParts 
+                ? GEOMETRY_SYSTEM_PROMPT 
+                : SYSTEM_PROMPT,
           },
           { role: 'user',   content: buildUserContent(prompt, image, modelOpts) }
         ]
@@ -241,7 +245,7 @@ async function callNemotron(prompt, image, options = {}) {
     .replace(/\r?\n```\s*$/im, '')
     .trim();
 
-  if (geometryParts) {
+  if (geometryParts || options.taskType === 'assembly') {
     const start = code.indexOf('{');
     const end = code.lastIndexOf('}');
     if (start >= 0 && end > start) {

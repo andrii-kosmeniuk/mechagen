@@ -8,6 +8,8 @@ import React, {
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { Theme } from '../context/ThemeContext';
 import type { GeomData, GeomPart } from '../types';
 
@@ -30,6 +32,20 @@ type Props = {
   modelOpacity?: number;
   /** Last generate prompt — used to parse tooth count / keyway for procedural gear */
   generationPrompt?: string;
+  /** Dynamic transforms from the Robotics Stage Inspector */
+  sceneTransforms?: Record<string, {
+    translate: { x: string; y: string; z: string };
+    orient: { x: string; y: string; z: string };
+    scale: { x: string; y: string; z: string };
+  }>;
+  /** Selected item for the Transform Gizmo */
+  selectedStageItem?: string;
+  /** Fires when dragging the Transform Gizmo */
+  onTransformUpdate?: (item: string, type: 'translate' | 'orient' | 'scale', axis: 'x'|'y'|'z', value: string) => void;
+  /** Optional GLTF/GLB robot model as a blob URL or base64 data URL */
+  robotGltfUrl?: string;
+  /** Fires when GLTF scene hierarchy is parsed, returns list of mesh names */
+  onGltfHierarchy?: (names: string[]) => void;
 };
 
 // ── Color themes ──────────────────────────────────────────────────────
@@ -117,7 +133,7 @@ function centerAndScale(geo: THREE.BufferGeometry, targetSize = 3.2) {
  * AI JSON primitives → Three.js group (centered & scaled like JSCAD path).
  * MeshStandardMaterial + explicit defaults; returns vertex count for UI stats.
  */
-function buildMeshFromParts(parts: GeomPart[]): {
+function buildMeshFromParts(parts: GeomPart[], sceneTransforms?: Props['sceneTransforms']): {
   group: THREE.Group;
   vertexCount: number;
 } {
@@ -131,14 +147,18 @@ function buildMeshFromParts(parts: GeomPart[]): {
 
     switch (shape) {
       case 'box':
-        geo = new THREE.BoxGeometry(p.w || 1, p.h || 1, p.d || 1);
+        geo = new THREE.BoxGeometry(
+          p.width  !== undefined ? p.width  : (p.w || 1),
+          p.height !== undefined ? p.height : (p.h || 1),
+          p.depth  !== undefined ? p.depth  : (p.d || 1)
+        );
         break;
       case 'cylinder':
         geo = new THREE.CylinderGeometry(
-          p.r || 0.5,
-          p.r || 0.5,
-          p.h || 1,
-          Math.max(3, Math.floor(p.radSeg || 32))
+          p.radiusTop  !== undefined ? p.radiusTop  : (p.r || 0.5),
+          p.radiusBottom !== undefined ? p.radiusBottom : (p.r || 0.5),
+          p.height !== undefined ? p.height : (p.h || 1),
+          p.radialSegments !== undefined ? Math.max(3, p.radialSegments) : 32
         );
         break;
       case 'sphere':
@@ -154,6 +174,430 @@ function buildMeshFromParts(parts: GeomPart[]): {
           Math.max(3, Math.floor(p.radSeg || 32))
         );
         break;
+      case 'bolt_template': {
+        // Rich bolt renderer — emitted by canonical previewBuilder for bolt/screw partTypes
+        // p fields mirror buildBoltProcedural's param() names
+        const boltCode = [
+          `d = ${p.diameter || 8}`,
+          `p = ${p.threadPitch || 1.25}`,
+          `head_h = ${p.headHeight || 5.3}`,
+          `head_w = ${p.headWidthAcrossFlats || 13}`,
+          `washer_od = ${p.washerOD || 17}`,
+          `washer_h = ${p.washerH || 1.6}`,
+          `smooth_len = ${p.smoothLen || (p.length ? p.length * 0.35 : 14)}`,
+          `thread_len = ${p.threadLen || (p.length ? p.length * 0.65 : 26)}`,
+        ].join('\n');
+        // buildBoltProcedural is defined later in this file — call it directly
+        const boltGroup = buildBoltProcedural(boltCode, 'dark', 'aluminum');
+        root.add(boltGroup);
+        // Count verts from boltGroup
+        boltGroup.traverse(obj => {
+          if (obj instanceof THREE.Mesh) {
+            const posAttr2 = obj.geometry.attributes.position;
+            if (posAttr2) vertexCount += posAttr2.count;
+          }
+        });
+        continue;
+      }
+
+      case 'gear_template': {
+        // Rich gear renderer — emitted by canonical previewBuilder for gear_basic partType
+        const gearCode = [
+          `N = ${p.toothCount || 20}`,
+          `m = ${p.module || 2}`,
+          `width = ${p.faceWidth || 10}`,
+          `bore_r = ${(p.boreDiameter || 8) / 2}`,
+          `pitch_r = ${((p.toothCount || 20) * (p.module || 2)) / (2 * Math.PI)}`,
+          `outer_r = ${((p.toothCount || 20) * (p.module || 2)) / (2 * Math.PI) + (p.module || 2) * 1.25}`,
+        ].join('\n');
+        const gearGroup = buildHelicalSpurGearProcedural(gearCode, '', undefined, 'dark', 'aluminum');
+        root.add(gearGroup);
+        gearGroup.traverse(obj => {
+          if (obj instanceof THREE.Mesh) {
+            const posAttr2 = obj.geometry.attributes.position;
+            if (posAttr2) vertexCount += posAttr2.count;
+          }
+        });
+        continue;
+      }
+
+      case 'mount_plate_template': {
+        const w = p.width || 100;
+        const l = p.length || 60;
+        const t = p.thickness || 4;
+        const hd = p.holeDiameter || 4.3;
+
+        const shape = new THREE.Shape();
+        shape.moveTo(-w/2, -l/2); shape.lineTo(w/2, -l/2); shape.lineTo(w/2, l/2); shape.lineTo(-w/2, l/2); shape.lineTo(-w/2, -l/2);
+
+        const hx = (w/2) * 0.8;
+        const hy = (l/2) * 0.8;
+        const pts = [[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy]];
+        pts.forEach(([px, py]) => {
+          const hole = new THREE.Path();
+          hole.absarc(px, py, hd/2, 0, Math.PI*2, true);
+          shape.holes.push(hole);
+        });
+
+        const mat = new THREE.MeshPhysicalMaterial({ color: 0x9a9ca0, metalness: 0.95, roughness: 0.15, clearcoat: 0.8, envMapIntensity: 3.0 });
+        const eOpt = { depth: t, bevelEnabled: true, bevelSegments: 4, steps: 1, bevelSize: 0.6, bevelThickness: 0.6, curveSegments: 64 };
+        const plate = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, eOpt), mat);
+        plate.castShadow = plate.receiveShadow = true;
+        plate.rotation.x = Math.PI / 2;
+        root.add(plate);
+        vertexCount += plate.geometry.attributes.position.count;
+        continue;
+      }
+
+      case 'bracket_template': {
+        const t = p.thickness || 5;
+        const w = p.depth || 30;
+        const armH = p.armHeight || 40;
+        const armL = p.armLength || 50;
+        
+        const bGroup = new THREE.Group();
+
+        const hShape = new THREE.Shape();
+        hShape.moveTo(0, 0); hShape.lineTo(armL, 0); hShape.lineTo(armL, w); hShape.lineTo(0, w); hShape.lineTo(0, 0);
+        const h1 = new THREE.Path(); h1.absarc(armL * 0.25, w/2, 2.6, 0, Math.PI*2, true); hShape.holes.push(h1);
+        const h2 = new THREE.Path(); h2.absarc(armL * 0.75, w/2, 2.6, 0, Math.PI*2, true); hShape.holes.push(h2);
+
+        const vLen = armH - t;
+        const vShape = new THREE.Shape();
+        vShape.moveTo(0, 0); vShape.lineTo(vLen, 0); vShape.lineTo(vLen, w); vShape.lineTo(0, w); vShape.lineTo(0, 0);
+        const v1 = new THREE.Path(); v1.absarc(vLen * 0.33, w/2, 2.6, 0, Math.PI*2, true); vShape.holes.push(v1);
+        const v2 = new THREE.Path(); v2.absarc(vLen * 0.66, w/2, 2.6, 0, Math.PI*2, true); vShape.holes.push(v2);
+
+        const mat = new THREE.MeshPhysicalMaterial({ color: 0x8a9098, metalness: 0.92, roughness: 0.25, clearcoat: 0.3, envMapIntensity: 2.0 });
+        const eOpt = { depth: t, bevelEnabled: true, bevelSegments: 4, steps: 1, bevelSize: 0.4, bevelThickness: 0.4, curveSegments: 64 };
+        const hMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(hShape, eOpt), mat);
+        const vMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(vShape, eOpt), mat);
+        hMesh.castShadow = hMesh.receiveShadow = true;
+        vMesh.castShadow = vMesh.receiveShadow = true;
+
+        hMesh.position.set(0, 0, 0);
+        vMesh.rotation.y = -Math.PI / 2;
+        vMesh.position.set(t, 0, 0);
+
+        bGroup.add(hMesh, vMesh);
+        
+        bGroup.rotation.x = Math.PI / 2; 
+        
+        root.add(bGroup);
+        vertexCount += hMesh.geometry.attributes.position.count + vMesh.geometry.attributes.position.count;
+        continue;
+      }
+
+      case 'robot_arm_full': {
+        /* ── Full 6-DOF arm via forward kinematics ───────────────────── */
+        const Y  = 0xFFD700;
+        const D  = 0x1a1a2e;
+        const MD = 0x2a2a40;
+        const yMat = new THREE.MeshPhysicalMaterial({ color: Y, metalness: 0.82, roughness: 0.18, envMapIntensity: 3 });
+        const dMat = new THREE.MeshPhysicalMaterial({ color: D, metalness: 0.92, roughness: 0.12, envMapIntensity: 3 });
+        const mMat = new THREE.MeshPhysicalMaterial({ color: MD, metalness: 0.88, roughness: 0.15, envMapIntensity: 3 });
+
+        /* helpers */
+        const mesh = (geo: THREE.BufferGeometry, mat: THREE.Material) => {
+          const m = new THREE.Mesh(geo, mat);
+          m.castShadow = m.receiveShadow = true;
+          return m;
+        };
+
+        const addLink = (parent: THREE.Group, len: number, r: number, pH: number, pT: number) => {
+          const g = new THREE.Group();
+          g.add(mesh(new THREE.CylinderGeometry(r, r, len, 32), yMat));
+          const plGeo = new THREE.BoxGeometry(pT, len - 8, pH);
+          [-1, 1].forEach(s => {
+            const pl = mesh(plGeo, yMat); pl.position.x = s * (r + pT / 2); g.add(pl);
+          });
+          const fR = r + 7;
+          [-len / 2 + 5, len / 2 - 5].forEach(yp => {
+            g.add(Object.assign(mesh(new THREE.CylinderGeometry(fR, fR, 10, 32), dMat), { position: new THREE.Vector3(0, yp, 0) }));
+            for (let i = 0; i < 6; i++) {
+              const a = i / 6 * Math.PI * 2;
+              const b = mesh(new THREE.CylinderGeometry(2.5, 2.5, 6, 6), dMat);
+              b.position.set(Math.cos(a) * (fR - 6), yp, Math.sin(a) * (fR - 6));
+              g.add(b);
+            }
+          });
+          // mid ribs
+          [-1, 0, 1].forEach(i => {
+            const rib = mesh(new THREE.BoxGeometry(pT * 2 + r * 2, 4, pH + 2), yMat);
+            rib.position.y = i * len * 0.28;
+            g.add(rib);
+          });
+          parent.add(g);
+          return g;
+        };
+
+        const addJoint = (parent: THREE.Group, r: number, h: number, sr: number) => {
+          const g = new THREE.Group();
+          const disc = mesh(new THREE.CylinderGeometry(r, r, h, 32), dMat);
+          disc.rotation.z = Math.PI / 2;
+          g.add(disc);
+          [-1, 1].forEach(s => {
+            const k = mesh(new THREE.CylinderGeometry(sr, sr, h + 8, 24), dMat);
+            k.rotation.z = Math.PI / 2; k.position.x = s * (h / 2 + 4);
+            g.add(k);
+            for (let i = 0; i < 4; i++) {
+              const a = i / 4 * Math.PI * 2;
+              const b = mesh(new THREE.CylinderGeometry(2, 2, 5, 6), mMat);
+              b.rotation.z = Math.PI / 2;
+              b.position.set(s * (h / 2 + 4), Math.cos(a) * (sr - 4), Math.sin(a) * (sr - 4));
+              g.add(b);
+            }
+          });
+          parent.add(g);
+          return g;
+        };
+
+        const arm = new THREE.Group();
+
+        /* BASE ─── flat plate at bottom with corner bolts */
+        const base = mesh(new THREE.BoxGeometry(110, 20, 110), dMat);
+        arm.add(base);   // base center at (0,0,0), top at y=10
+
+        for (const [bx, bz] of [[45,45],[-45,45],[45,-45],[-45,-45]] as [number,number][]) {
+          const bolt = mesh(new THREE.CylinderGeometry(5, 5, 12, 8), mMat);
+          bolt.position.set(bx, 11, bz);
+          arm.add(bolt);
+        }
+
+        /* J1 SHOULDER ─── straight up from base top (y=10) */
+        const j1Len = 60;
+        const j1 = addLink(arm, j1Len, 26, 30, 10);
+        j1.position.set(0, 10 + j1Len / 2, 0);   // center: y=40, top: y=70
+
+        /* J2 LOWER ARM ─── tilt forward 30° (x-rot = 0.52 rad) */
+        const j2Len = 120, j2θ = 0.52;
+        const j2 = addLink(arm, j2Len, 14, 22, 8);
+        j2.rotation.x = j2θ;
+        // bottom of j2 must be at y=70, z=0
+        // bottom local (0,-60,0) → after rotX: (0,-60·cos θ,-60·sin θ)
+        // so center = (0, 70+60·cos θ, 60·sin θ) = (0, 70+52.9, 29.7)
+        j2.position.set(0, 70 + j2Len / 2 * Math.cos(j2θ), j2Len / 2 * Math.sin(j2θ));
+        const j2Top = new THREE.Vector3(
+          0,
+          j2.position.y + j2Len / 2 * Math.cos(j2θ),
+          j2.position.z + j2Len / 2 * Math.sin(j2θ)
+        ); // ≈ (0, 175.8, 59.4)
+
+        /* ELBOW JOINT at j2 top */
+        const ej = addJoint(arm, 20, 20, 12);
+        ej.position.copy(j2Top);
+
+        /* J3 FOREARM ─── tilt -25° from vertical (going forward-down) */
+        const j3Len = 95, j3θ = -0.44;
+        const j3 = addLink(arm, j3Len, 12, 18, 7);
+        j3.rotation.x = j3θ;
+        j3.position.set(
+          0,
+          j2Top.y + j3Len / 2 * Math.cos(j3θ),
+          j2Top.z + j3Len / 2 * Math.sin(j3θ)
+        );
+        const j3Top = new THREE.Vector3(
+          0,
+          j3.position.y + j3Len / 2 * Math.cos(j3θ),
+          j3.position.z + j3Len / 2 * Math.sin(j3θ)
+        );
+
+        /* WRIST JOINT at j3 top */
+        const wj = addJoint(arm, 16, 16, 10);
+        wj.position.copy(j3Top);
+
+        /* GRIPPER */
+        const gh = mesh(new THREE.BoxGeometry(48, 26, 36), yMat);
+        gh.position.set(j3Top.x, j3Top.y + 4, j3Top.z + 20);
+        arm.add(gh);
+
+        const cap = mesh(new THREE.CylinderGeometry(13, 13, 12, 32), yMat);
+        cap.rotation.z = Math.PI / 2;
+        cap.position.set(0, j3Top.y + 4, j3Top.z + 4);
+        arm.add(cap);
+
+        [-1, 1].forEach(s => {
+          const xOff = s * 29;
+          const vert = mesh(new THREE.BoxGeometry(10, 24, 14), dMat);
+          vert.position.set(xOff, j3Top.y + 4, j3Top.z + 33);
+          arm.add(vert);
+          const tip = mesh(new THREE.BoxGeometry(10, 14, 26), dMat);
+          tip.position.set(xOff, j3Top.y - 5, j3Top.z + 46);
+          arm.add(tip);
+        });
+
+        root.add(arm);
+        arm.traverse(o => { if (o instanceof THREE.Mesh) vertexCount += o.geometry.attributes.position?.count || 0; });
+        continue;
+      }
+
+      case 'robot_link': {
+
+        const linkLen  = p.length || 120;
+        const linkR    = p.radius || 14;
+        const plateH   = p.plateH  || 22;
+        const plateT   = p.plateT  || 8;
+        const flangeR  = p.flangeR || linkR + 7;
+        const linkColor = parseInt(String(part.color || '#FFD700').replace('#',''), 16);
+        const darkColor = 0x1a1a2e;
+        const linkGroup = new THREE.Group();
+        const mat     = new THREE.MeshPhysicalMaterial({ color: linkColor,  metalness: part.metalness ?? 0.85, roughness: part.roughness ?? 0.18, envMapIntensity: 2.5 });
+        const darkMat = new THREE.MeshPhysicalMaterial({ color: darkColor,  metalness: 0.9, roughness: 0.15, envMapIntensity: 2.5 });
+        // Main cylinder
+        linkGroup.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(linkR, linkR, linkLen, 32), mat), { castShadow: true, receiveShadow: true }));
+        // Side plates L/R
+        const plateGeo = new THREE.BoxGeometry(plateT, linkLen - 8, plateH);
+        [-1, 1].forEach(s => {
+          const plate = new THREE.Mesh(plateGeo, mat);
+          plate.position.set(s * (linkR + plateT/2), 0, 0);
+          plate.castShadow = plate.receiveShadow = true;
+          linkGroup.add(plate);
+        });
+        // End flanges + bolt rings
+        const flangeGeo = new THREE.CylinderGeometry(flangeR, flangeR, 10, 32);
+        [-linkLen/2 + 5, linkLen/2 - 5].forEach(yPos => {
+          const flange = new THREE.Mesh(flangeGeo, darkMat);
+          flange.position.y = yPos;
+          flange.castShadow = true;
+          linkGroup.add(flange);
+          for (let i = 0; i < 6; i++) {
+            const a = (i / 6) * Math.PI * 2;
+            const bolt = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, 6, 6), darkMat);
+            bolt.position.set(Math.cos(a) * (flangeR - 6), yPos, Math.sin(a) * (flangeR - 6));
+            linkGroup.add(bolt);
+          }
+        });
+        // Ribs
+        for (let i = -1; i <= 1; i++) {
+          const rib = new THREE.Mesh(new THREE.BoxGeometry(plateT * 2 + linkR * 2, 4, plateH + 2), mat);
+          rib.position.set(0, i * linkLen * 0.28, 0);
+          linkGroup.add(rib);
+        }
+        root.add(linkGroup);
+        linkGroup.traverse(o => { if (o instanceof THREE.Mesh) vertexCount += o.geometry.attributes.position?.count || 0; });
+        continue;
+      }
+
+      case 'robot_joint': {
+        const r     = p.r || 22;
+        const h     = p.h || 22;
+        const sideR = p.sideR || 13;
+        const jointColor = parseInt(String(part.color || '#1a1a2e').replace('#',''), 16);
+        const jGroup = new THREE.Group();
+        const mat = new THREE.MeshPhysicalMaterial({ color: jointColor, metalness: 0.92, roughness: 0.12, envMapIntensity: 2.5 });
+        // Main disc (horizontal)
+        const disc = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 32), mat);
+        disc.rotation.z = Math.PI / 2;
+        disc.castShadow = true;
+        jGroup.add(disc);
+        // Side knuckles + bolt rings
+        [-1, 1].forEach(side => {
+          const knuckle = new THREE.Mesh(new THREE.CylinderGeometry(sideR, sideR, h + 8, 24), mat);
+          knuckle.rotation.z = Math.PI / 2;
+          knuckle.position.x = side * (h / 2 + 4);
+          knuckle.castShadow = true;
+          jGroup.add(knuckle);
+          for (let i = 0; i < 4; i++) {
+            const a = (i / 4) * Math.PI * 2;
+            const bolt = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 5, 6), mat);
+            bolt.position.set(side * (h/2 + 4), Math.cos(a) * (sideR - 4), Math.sin(a) * (sideR - 4));
+            bolt.rotation.z = Math.PI / 2;
+            jGroup.add(bolt);
+          }
+        });
+        root.add(jGroup);
+        jGroup.traverse(o => { if (o instanceof THREE.Mesh) vertexCount += o.geometry.attributes.position?.count || 0; });
+        continue;
+      }
+
+      case 'robot_gripper': {
+        const gw  = p.w || 50;
+        const gd  = p.d || 28;
+        const gh  = p.h || 38;
+        const op  = p.opening || 52;
+        const gripColor = parseInt(String(part.color || '#FFD700').replace('#',''), 16);
+        const gGroup  = new THREE.Group();
+        const mat     = new THREE.MeshPhysicalMaterial({ color: gripColor, metalness: 0.85, roughness: 0.18, envMapIntensity: 2.5 });
+        const darkMat = new THREE.MeshPhysicalMaterial({ color: 0x1a1a2e , metalness: 0.9, roughness: 0.15, envMapIntensity: 2.5 });
+        // Housing
+        const housing = new THREE.Mesh(new THREE.BoxGeometry(gw, gd, gh), mat);
+        housing.castShadow = true;
+        gGroup.add(housing);
+        // Back cap
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(gd/2, gd/2, 12, 32), mat);
+        cap.rotation.z = Math.PI / 2;
+        cap.position.z = -(gh/2 + 6);
+        gGroup.add(cap);
+        // L-shaped fingers
+        [-1, 1].forEach(side => {
+          const xOff = side * (gw/2 + 5);
+          const vert = new THREE.Mesh(new THREE.BoxGeometry(10, gd - 4, 14), darkMat);
+          vert.position.set(xOff, 0, gh/2 + 14);
+          vert.castShadow = true;
+          gGroup.add(vert);
+          const tip = new THREE.Mesh(new THREE.BoxGeometry(10, 14, op * 0.4), darkMat);
+          tip.position.set(xOff, -(gd/2 - 7), gh/2 + 14 + op * 0.2);
+          tip.castShadow = true;
+          gGroup.add(tip);
+        });
+        root.add(gGroup);
+        gGroup.traverse(o => { if (o instanceof THREE.Mesh) vertexCount += o.geometry.attributes.position?.count || 0; });
+        continue;
+      }
+
+      case 'bearing_template': {
+        const od = p.outerD || 47;
+        const id = p.innerD || 20;
+        const w = p.width || 14;
+
+        const bGroup = new THREE.Group();
+        
+        const outerShape = new THREE.Shape();
+        outerShape.absarc(0, 0, od/2, 0, Math.PI*2, false);
+        const outerHole = new THREE.Path();
+        outerHole.absarc(0, 0, od/2 - 4.5, 0, Math.PI*2, true);
+        outerShape.holes.push(outerHole);
+        
+        const innerShape = new THREE.Shape();
+        innerShape.absarc(0, 0, id/2 + 4.5, 0, Math.PI*2, false);
+        const innerHole = new THREE.Path();
+        innerHole.absarc(0, 0, id/2, 0, Math.PI*2, true);
+        innerShape.holes.push(innerHole);
+
+        const eOpt = { depth: w, bevelEnabled: true, bevelSegments: 6, steps: 1, bevelSize: 0.4, bevelThickness: 0.4, curveSegments: 128 };
+        
+        const outMat = new THREE.MeshPhysicalMaterial({ color: 0x223344, metalness: 0.95, roughness: 0.1, clearcoat: 0.6, envMapIntensity: 4.0 });
+        const outMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(outerShape, eOpt), outMat);
+        outMesh.castShadow = outMesh.receiveShadow = true;
+        bGroup.add(outMesh);
+        vertexCount += outMesh.geometry.attributes.position.count;
+
+        const inMat = new THREE.MeshPhysicalMaterial({ color: 0x1e2830, metalness: 0.95, roughness: 0.15, clearcoat: 0.6, envMapIntensity: 4.0 });
+        const inMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(innerShape, eOpt), inMat);
+        inMesh.castShadow = inMesh.receiveShadow = true;
+        bGroup.add(inMesh);
+        vertexCount += inMesh.geometry.attributes.position.count;
+        
+        const ballCount = 8;
+        const ballD = 7.5;
+        const orbit = (od/2 + id/2) / 2;
+        const ballGeo = new THREE.SphereGeometry(ballD/2, 64, 32);
+        const ballMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 1.0, roughness: 0.0, clearcoat: 1.0, envMapIntensity: 6.0 });
+        
+        for (let i = 0; i < ballCount; i++) {
+          const a = (i / ballCount) * Math.PI * 2;
+          const ball = new THREE.Mesh(ballGeo, ballMat);
+          ball.position.set(Math.cos(a) * orbit, Math.sin(a) * orbit, w/2);
+          ball.castShadow = ball.receiveShadow = true;
+          bGroup.add(ball);
+          vertexCount += ballGeo.attributes.position.count;
+        }
+
+        bGroup.rotation.x = Math.PI / 2;
+        root.add(bGroup);
+        continue;
+      }
+
       default:
         geo = new THREE.BoxGeometry(1, 1, 1);
     }
@@ -187,7 +631,18 @@ function buildMeshFromParts(parts: GeomPart[]): {
   const box = new THREE.Box3().setFromObject(root);
   const center = new THREE.Vector3();
   box.getCenter(center);
-  root.position.set(-center.x, -center.y, -center.z);
+  
+  // Shift all children to precisely center the unscaled group around origin
+  root.children.forEach((child, i) => {
+    child.name = parts[i]?.label || `part_${i}`;
+    child.position.x -= center.x;
+    child.position.y -= center.y;
+    child.position.z -= center.z;
+    child.userData.basePosition = child.position.clone();
+    child.userData.baseRotation = child.rotation.clone();
+    child.userData.baseScale = child.scale.clone();
+  });
+
   const size = new THREE.Vector3();
   box.getSize(size);
   const maxDim = Math.max(size.x, size.y, size.z, 1e-6);
@@ -933,6 +1388,11 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
         onToggleWireframe,
         modelOpacity = 1,
         generationPrompt = '',
+        sceneTransforms,
+        selectedStageItem,
+        onTransformUpdate,
+        robotGltfUrl,
+        onGltfHierarchy,
       },
       ref
     ) {
@@ -949,6 +1409,8 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
     const autoSpinRef    = useRef(false);
     const promptRef      = useRef('');
     const generationPromptRef = useRef(generationPrompt);
+    const transformControlRef = useRef<any>(null);
+    const controlsEnabledRef = useRef(true);
     themeRef.current     = theme;
     materialKeyRef.current = materialKey;
     generationPromptRef.current = generationPrompt;
@@ -1018,13 +1480,21 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
       scene.add(grid);
       scene.add(new THREE.AxesHelper(2));
 
-      // Mouse controls
       let isRotating = false;
       let isPanning = false;
       let prevMouse = { x: 0, y: 0 };
       const target = new THREE.Vector3(0, 0, 0);
 
+      // Transform Controls Setup
+      const tControl = new TransformControls(camera, renderer.domElement);
+      tControl.addEventListener('dragging-changed', (event) => {
+        controlsEnabledRef.current = !event.value;
+      });
+      scene.add(tControl.getHelper());
+      transformControlRef.current = tControl;
+
       const onDown = (e: MouseEvent) => {
+        if (!controlsEnabledRef.current) return;
         if (e.button === 0) isRotating = true;
         if (e.button === 2) isPanning = true;
         prevMouse = { x: e.clientX, y: e.clientY };
@@ -1034,7 +1504,7 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
         const dx = e.clientX - prevMouse.x;
         const dy = e.clientY - prevMouse.y;
         prevMouse = { x: e.clientX, y: e.clientY };
-        if (isRotating) {
+        if (isRotating && controlsEnabledRef.current) {
           const offset = camera.position.clone().sub(target);
           const radius = offset.length();
           let theta = Math.atan2(offset.x, offset.z);
@@ -1049,7 +1519,7 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
           );
           camera.lookAt(target);
         }
-        if (isPanning) {
+        if (isPanning && controlsEnabledRef.current) {
           const panSpeed = 0.01;
           const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
           const up    = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
@@ -1059,6 +1529,7 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
         }
       };
       const onWheel = (e: WheelEvent) => {
+        if (!controlsEnabledRef.current) return;
         const offset = camera.position.clone().sub(target);
         const radius = offset.length() * (1 + e.deltaY * 0.001);
         camera.position.copy(offset.normalize().multiplyScalar(Math.max(0.5, radius)));
@@ -1099,6 +1570,7 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
         envRT.dispose();
         pmremGenerator.dispose();
         renderer.dispose();
+        tControl.dispose();
         scene.clear();
       };
     }, []);
@@ -1318,6 +1790,42 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [geomData, generationPrompt]);
 
+    // ── Apply Scene Transforms (Robotics Live Update) ─────────────────
+    useEffect(() => {
+      if (!sceneTransforms || !groupRef.current) return;
+      
+      groupRef.current.traverse(child => {
+        if (child.name && sceneTransforms[child.name]) {
+          const t = sceneTransforms[child.name];
+          
+          const bp = child.userData.basePosition;
+          const br = child.userData.baseRotation;
+          const bs = child.userData.baseScale;
+          if (!bp || !br || !bs) return;
+
+          const tx = parseFloat(t.translate.x) || 0;
+          const ty = parseFloat(t.translate.y) || 0;
+          const tz = parseFloat(t.translate.z) || 0;
+          
+          const rx = parseFloat(t.orient.x) || 0;
+          const ry = parseFloat(t.orient.y) || 0;
+          const rz = parseFloat(t.orient.z) || 0;
+          
+          const sx = parseFloat(t.scale.x) || 1;
+          const sy = parseFloat(t.scale.y) || 1;
+          const sz = parseFloat(t.scale.z) || 1;
+
+          child.position.set(bp.x + tx, bp.y + ty, bp.z + tz);
+          child.rotation.set(
+            br.x + (rx * Math.PI / 180),
+            br.y + (ry * Math.PI / 180),
+            br.z + (rz * Math.PI / 180)
+          );
+          child.scale.set(bs.x * sx, bs.y * sy, bs.z * sz);
+        }
+      });
+    }, [sceneTransforms]);
+
     // ── Scale update ─────────────────────────────────────────────────
     useEffect(() => {
       if (groupRef.current) groupRef.current.scale.set(scale.x, scale.y, scale.z);
@@ -1375,6 +1883,126 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Props>(
       whiteSpace: 'nowrap',
       flexShrink: 0,
     };
+
+    // ── Load GLTF robot model ─────────────────────────────────────────────────
+    useEffect(() => {
+      if (!robotGltfUrl || !sceneRef.current) return;
+      const scene = sceneRef.current;
+
+      // Clear old group
+      if (groupRef.current) {
+        scene.remove(groupRef.current);
+        groupRef.current.traverse(obj => {
+          if (obj instanceof THREE.Mesh) {
+            obj.geometry.dispose();
+            if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+            else (obj.material as THREE.Material).dispose();
+          }
+        });
+        groupRef.current = null;
+      }
+
+      const loader = new GLTFLoader();
+      loader.load(
+        robotGltfUrl,
+        (gltf) => {
+          const root = gltf.scene;
+          // Center and scale
+          const box = new THREE.Box3().setFromObject(root);
+          const center = new THREE.Vector3();
+          box.getCenter(center);
+          root.position.sub(center);
+          const size = new THREE.Vector3();
+          box.getSize(size);
+          const maxDim = Math.max(size.x, size.y, size.z, 0.001);
+          root.scale.setScalar(3.5 / maxDim);
+          root.castShadow = true;
+          root.receiveShadow = true;
+
+          // Tag all meshes with basePosition for TransformControls
+          root.traverse(child => {
+            if (child instanceof THREE.Mesh) {
+              child.castShadow = true;
+              child.receiveShadow = true;
+              child.userData.basePosition = child.position.clone();
+              child.userData.baseRotation = child.rotation.clone();
+              child.userData.baseScale = child.scale.clone();
+            }
+          });
+
+          scene.add(root);
+          groupRef.current = root as unknown as THREE.Group;
+
+          // Report hierarchy to parent
+          if (onGltfHierarchy) {
+            const names: string[] = [];
+            root.traverse(child => { if (child.name) names.push(child.name); });
+            onGltfHierarchy(names);
+          }
+        },
+        undefined,
+        (err) => console.error('[Viewport3D] GLTF load error:', err)
+      );
+    }, [robotGltfUrl]);
+
+    // ── Bind Gizmo to Selected Part ──────────────────────────────────────────────
+    useEffect(() => {
+      const tc = transformControlRef.current;
+      if (!tc || !groupRef.current) return;
+      
+      if (!selectedStageItem) {
+        tc.detach();
+        return;
+      }
+      
+      let found = false;
+      groupRef.current.traverse(child => {
+        if (child.name === selectedStageItem && !found && child.userData.basePosition) {
+          tc.attach(child);
+          found = true;
+        }
+      });
+      if (!found) tc.detach();
+    }, [selectedStageItem]);
+
+    // ── Broadcast Gizmo Dragging back to State ────────────────────────────────
+    const onTransformUpdateRef = useRef(onTransformUpdate);
+    onTransformUpdateRef.current = onTransformUpdate;
+
+    useEffect(() => {
+      const tc = transformControlRef.current;
+      if (!tc) return;
+
+      const onChange = () => {
+        if (!tc.dragging || !tc.object || !tc.object.name || !onTransformUpdateRef.current) return;
+        
+        const obj = tc.object;
+        const bp = obj.userData.basePosition;
+        const br = obj.userData.baseRotation;
+        if (!bp || !br) return;
+
+        const tx = obj.position.x - bp.x;
+        const ty = obj.position.y - bp.y;
+        const tz = obj.position.z - bp.z;
+
+        const rx = (obj.rotation.x - br.x) * (180 / Math.PI);
+        const ry = (obj.rotation.y - br.y) * (180 / Math.PI);
+        const rz = (obj.rotation.z - br.z) * (180 / Math.PI);
+
+        if (tc.mode === 'translate') {
+          onTransformUpdateRef.current(obj.name, 'translate', 'x', tx.toFixed(3));
+          onTransformUpdateRef.current(obj.name, 'translate', 'y', ty.toFixed(3));
+          onTransformUpdateRef.current(obj.name, 'translate', 'z', tz.toFixed(3));
+        } else if (tc.mode === 'rotate') {
+          onTransformUpdateRef.current(obj.name, 'orient', 'x', rx.toFixed(3));
+          onTransformUpdateRef.current(obj.name, 'orient', 'y', ry.toFixed(3));
+          onTransformUpdateRef.current(obj.name, 'orient', 'z', rz.toFixed(3));
+        }
+      };
+
+      tc.addEventListener('change', onChange);
+      return () => tc.removeEventListener('change', onChange);
+    }, []);
 
     return (
       <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>

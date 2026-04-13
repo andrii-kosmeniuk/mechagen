@@ -1,0 +1,4 @@
+# MechaGen Phase 3 — Python Worker Dependencies
+cadquery>=2.4.0
+# Optional: for richer mesh sanity checks (falls back gracefully if not installed)
+trimesh>=4.0.0

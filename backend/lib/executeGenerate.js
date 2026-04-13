@@ -142,11 +142,13 @@ async function executeGenerate(body) {
 
   const modelPrompt = buildModelPrompt(input);
 
-  if (input.proceduralParts) {
-    console.log('[executeGenerate] procedural JSON parts — calling AI…');
+  if (input.proceduralParts || input.taskType === 'assembly') {
+    const isAssy = input.taskType === 'assembly';
+    console.log(`[executeGenerate] ${isAssy ? 'Assembly' : 'procedural JSON parts'} — calling AI…`);
     const raw = await callNemotron(modelPrompt, input.image, {
       highDetail: input.highDetail,
-      geometryParts: true,
+      geometryParts: !isAssy,
+      taskType: input.taskType,
     });
     console.log('[executeGenerate] AI returned JSON parts, length=', raw.length);
     const { name, parts, description, dimensions } = parseGeomPartsJson(raw);
